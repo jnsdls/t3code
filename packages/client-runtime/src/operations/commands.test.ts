@@ -402,6 +402,33 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestCrypto)),
   );
 
+  it.effect("launches an existing empty thread into a new pier checkout", () =>
+    Effect.gen(function* () {
+      const launches: OrchestrationV2ThreadLaunchInput[] = [];
+      const supervisor = yield* makeSupervisor({ commands: [], projects: [], launches });
+
+      yield* startThreadTurn({
+        commandId: CommandId.make("launch-existing-thread-pier"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-existing-thread-pier"),
+          role: "user",
+          text: "Move to a pier checkout",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        bootstrap: { preparePierCheckout: true, runSetupScript: true },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(launches[0]).toMatchObject({
+        threadId: v2ThreadId,
+        reuseExistingThread: true,
+        workspaceStrategy: { type: "pier_checkout" },
+      });
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("uses server-resolved delivery intent without fetching the full projection", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

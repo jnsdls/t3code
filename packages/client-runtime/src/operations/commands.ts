@@ -155,6 +155,7 @@ interface StartThreadBootstrap {
     readonly branch?: string;
     readonly startFromOrigin?: boolean;
   };
+  readonly preparePierCheckout?: boolean;
   readonly runSetupScript?: boolean;
 }
 
@@ -633,7 +634,8 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
   );
   const bootstrap = input.bootstrap?.createThread;
   const prepareWorktree = input.bootstrap?.prepareWorktree;
-  if (bootstrap !== undefined || prepareWorktree !== undefined) {
+  const preparePierCheckout = input.bootstrap?.preparePierCheckout === true;
+  if (bootstrap !== undefined || prepareWorktree !== undefined || preparePierCheckout) {
     const existingProjection =
       bootstrap === undefined ? yield* getProjection(input.threadId) : null;
     const thread = bootstrap ?? existingProjection!.thread;
@@ -670,7 +672,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       modelSelection: input.modelSelection ?? thread.modelSelection,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
-      workspaceStrategy,
+      workspaceStrategy: preparePierCheckout
+        ? { type: "pier_checkout" as const }
+        : workspaceStrategy,
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,

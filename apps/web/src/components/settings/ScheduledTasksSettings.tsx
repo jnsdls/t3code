@@ -119,6 +119,7 @@ const WORKSPACE_MODE_LABELS: Record<WorkspaceMode, string> = {
   worktree: "Create a new worktree",
   root: "Use the project checkout",
   existing_worktree: "Use a specific checkout",
+  pier_checkout: "Create a new pier checkout",
 };
 
 const EMPTY_DRAFT: DraftState = {
@@ -1094,8 +1095,8 @@ function ScheduledTaskEditorForm({
         ? draft.baseModelSelection
         : selection;
     const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
-      draft.workspaceMode === "root"
-        ? { type: "root" }
+      draft.workspaceMode === "root" || draft.workspaceMode === "pier_checkout"
+        ? { type: draft.workspaceMode }
         : draft.workspaceMode === "existing_worktree"
           ? { type: "existing_worktree", worktreePath: draft.existingWorktreePath.trim() }
           : {
@@ -1274,6 +1275,7 @@ function ScheduledTaskEditorForm({
                   <SelectItem value="worktree">Create a new worktree</SelectItem>
                   <SelectItem value="root">Use the project checkout</SelectItem>
                   <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
+                  <SelectItem value="pier_checkout">Create a new pier checkout</SelectItem>
                 </SelectPopup>
               </Select>
             </Field>

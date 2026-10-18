@@ -145,6 +145,7 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { isTrackedWorkspaceStrategy } from "../vcs/pier/pierWorkspaceStrategy.ts";
 
 export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
   "OrchestratorDispatchError",
@@ -1320,7 +1321,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : undefined;
       const worktreeMissing =
         failedRun?.id === options?.endedRunId &&
-        failedRun?.workspacePreparation?.type === "worktree" &&
+        isTrackedWorkspaceStrategy(failedRun?.workspacePreparation?.type) &&
         projection.thread.worktreePath === null;
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
       const projectOverride =
@@ -4993,7 +4994,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         activeRun === undefined &&
         dispatchMode.type === "queue_after_active" &&
         (latestRun?.status === "failed" || latestRun?.status === "interrupted") &&
-        latestRun.workspacePreparation?.type === "worktree" &&
+        isTrackedWorkspaceStrategy(latestRun.workspacePreparation?.type) &&
         projection.thread.worktreePath === null
           ? latestRun
           : undefined;

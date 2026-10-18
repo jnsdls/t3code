@@ -511,6 +511,10 @@ export const OrchestrationV2ThreadLaunchWorkspaceStrategy = Schema.Union([
     branch: Schema.optional(TrimmedNonEmptyString),
     startFromOrigin: Schema.optional(Schema.Boolean),
   }),
+  // A sibling of the project's own pier checkout, with its upstream, server and cone.
+  Schema.Struct({
+    type: Schema.Literal("pier_checkout"),
+  }),
 ]);
 export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
   typeof OrchestrationV2ThreadLaunchWorkspaceStrategy.Type;

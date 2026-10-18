@@ -36,6 +36,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -62,6 +63,9 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as PierCli from "../vcs/pier/PierCli.ts";
+import { makeFakePier } from "../vcs/testing/FakePier.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
@@ -128,6 +132,8 @@ interface HarnessOptions {
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly workspaceRoot?: string;
+  readonly pierEnvironment?: NodeJS.ProcessEnv;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -182,7 +188,10 @@ function makeHarness(options: HarnessOptions = {}) {
       getById: (id) =>
         Effect.succeed(
           id === projectId
-            ? Option.some(project)
+            ? Option.some({
+                ...project,
+                workspaceRoot: options.workspaceRoot ?? project.workspaceRoot,
+              })
             : id === otherProjectId
               ? Option.some(otherProject)
               : Option.none(),
@@ -218,6 +227,14 @@ function makeHarness(options: HarnessOptions = {}) {
         namedProjectsRoot: "/projects",
         folderForThread: () => Effect.succeed(Option.none()),
       }),
+    PierCli.layer.pipe(
+      Layer.provide(Layer.succeed(HostProcess.Environment, options.pierEnvironment ?? process.env)),
+      Layer.provide(NodeServices.layer),
+    ),
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3-launch-pier-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
+    NodeServices.layer,
   );
   const layerLaunch = ThreadLaunch.layer.pipe(
     Layer.provide(
@@ -1942,6 +1959,140 @@ it.effect("removes a worktree that failed before the thread recorded it", () => 
     );
   }).pipe(Effect.provide(harness.layer));
 });
+
+it.effect("creates a pier checkout beside the project's own and runs setup in it", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pier = yield* makeFakePier;
+    const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pier-project-" });
+    const setupPath = yield* Deferred.make<string>();
+    const harness = makeHarness({
+      workspaceRoot: projectRoot,
+      pierEnvironment: pier.environment,
+      runSetup: (input) =>
+        Deferred.succeed(setupPath, input.worktreePath).pipe(
+          Effect.as({ status: "no-script" as const }),
+        ),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const config = yield* ServerConfig.ServerConfig;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:pier-checkout",
+          thread: "thread:launch:pier-0123abcd",
+          message: "Build the feature",
+          workspace: { type: "pier_checkout" },
+        }),
+      );
+      const checkout = path.join(config.worktreesDir, path.basename(projectRoot), "t3-0123abcd");
+      assert.equal(yield* Deferred.await(setupPath), checkout);
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      assert.equal(projection.thread.worktreePath, checkout);
+      assert.equal(projection.thread.branch, null);
+      assert.deepEqual(yield* pier.calls, [
+        `${yield* fs.realPath(projectRoot)}|status --json`,
+        `${yield* fs.realPath(path.dirname(checkout))}|--server http://pier.test --upstream acme/widgets checkout ${checkout} --agent t3-0123abcd --cone src --cone docs --json`,
+      ]);
+      assert.equal(harness.createWorktree.mock.calls.length, 0);
+      assert.equal(harness.generateBranchName.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("leaves pier to pick the server for a checkout that never recorded one", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pier = yield* makeFakePier;
+    const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pier-project-" });
+    yield* pier.setStatus({
+      root: projectRoot,
+      server: null,
+      upstream: "acme/widgets",
+      pinned: "cs-pinned",
+      agent: null,
+      cone: ["src"],
+      uncommitted: [],
+    });
+    const setupPath = yield* Deferred.make<string>();
+    const harness = makeHarness({
+      workspaceRoot: projectRoot,
+      pierEnvironment: pier.environment,
+      runSetup: (input) =>
+        Deferred.succeed(setupPath, input.worktreePath).pipe(
+          Effect.as({ status: "no-script" as const }),
+        ),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const config = yield* ServerConfig.ServerConfig;
+      yield* launches.launch(
+        launchInput({
+          command: "command:launch:pier-no-server",
+          thread: "thread:launch:pier-0badcafe",
+          message: "Build the feature",
+          workspace: { type: "pier_checkout" },
+        }),
+      );
+      const checkout = path.join(config.worktreesDir, path.basename(projectRoot), "t3-0badcafe");
+      assert.equal(yield* Deferred.await(setupPath), checkout);
+      assert.equal(
+        (yield* pier.calls).at(-1),
+        `${yield* fs.realPath(path.dirname(checkout))}|--upstream acme/widgets checkout ${checkout} --agent t3-0badcafe --cone src --json`,
+      );
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("removes a pier checkout that failed half-way and reports pier's reason", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pier = yield* makeFakePier;
+    yield* pier.failCheckouts;
+    const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pier-project-" });
+    const harness = makeHarness({ workspaceRoot: projectRoot, pierEnvironment: pier.environment });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const config = yield* ServerConfig.ServerConfig;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:pier-checkout-failure",
+          thread: "thread:launch:pier-fedcba98",
+          message: "Build the feature",
+          workspace: { type: "pier_checkout" },
+        }),
+      );
+      yield* threads
+        .streamStoredEventsFrom({
+          threadId: launched.threadId,
+          afterSequence: 0,
+          eventType: "run.updated",
+        })
+        .pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" && stored.event.payload.status === "failed",
+          ),
+          Stream.runHead,
+        );
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      assert.equal(projection.thread.worktreePath, null);
+      assert.isFalse(
+        yield* fs.exists(path.join(config.worktreesDir, path.basename(projectRoot), "t3-fedcba98")),
+      );
+      assert.match(
+        projection.turnItems.find((item) => item.type === "error")?.failure.message ?? "",
+        /acme\/widgets is not served here/u,
+      );
+      assert.equal(harness.removeWorktree.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
 
 it.effect.each(["worktree", "setup"] as const)(
   "%s failure keeps the thread and message visible and emits failure items",

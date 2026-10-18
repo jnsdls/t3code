@@ -655,8 +655,8 @@ function TaskForm({
       enabled: draft.enabled,
       threadId: draft.task?.threadId ?? null,
       workspaceStrategy:
-        draft.workspace === "root"
-          ? { type: "root" }
+        draft.workspace === "root" || draft.workspace === "pier_checkout"
+          ? { type: draft.workspace }
           : draft.workspace === "existing_worktree"
             ? { type: "existing_worktree", worktreePath: draft.checkoutPath.trim() }
             : {
@@ -797,7 +797,9 @@ function TaskForm({
                 ? "New worktree"
                 : draft.workspace === "root"
                   ? "Project checkout"
-                  : "Specific checkout"
+                  : draft.workspace === "pier_checkout"
+                    ? "New pier checkout"
+                    : "Specific checkout"
             }
             actions={[
               {

@@ -50,6 +50,11 @@ import type * as Orchestrator from "./Orchestrator.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import { makePierThreadCheckouts } from "../vcs/pier/pierThreadCheckout.ts";
+import {
+  isTrackedWorkspaceStrategy,
+  reusePierCheckout,
+} from "../vcs/pier/pierWorkspaceStrategy.ts";
 
 export type ThreadLaunchWorkspaceStrategy =
   | { readonly type: "root"; readonly branch?: string | undefined }
@@ -63,7 +68,8 @@ export type ThreadLaunchWorkspaceStrategy =
       readonly baseRef: string;
       readonly branch?: string | undefined;
       readonly startFromOrigin?: boolean | undefined;
-    };
+    }
+  | { readonly type: "pier_checkout"; readonly branch?: undefined };
 
 export interface ThreadLaunchInitialMessage {
   readonly messageId?: MessageId;
@@ -102,7 +108,7 @@ type PreparationInput = Pick<
   ThreadLaunchInput,
   "commandId" | "projectId" | "workspaceStrategy" | "initialMessage"
 > & {
-  readonly reusedWorktree?: { readonly baseRef: string };
+  readonly reusedWorktree?: { readonly baseRef: string | null };
 };
 
 export interface ThreadLaunchPreparationInput {
@@ -209,6 +215,7 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const pierCheckouts = yield* makePierThreadCheckouts;
   const preparationScope = yield* Scope.make("sequential");
   const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
   yield* Effect.addFinalizer(() => Scope.close(preparationScope, Exit.void));
@@ -303,7 +310,9 @@ const make = Effect.gen(function* () {
     );
 
     const reused = input.reusedWorktree;
-    const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
+    const tracked =
+      isTrackedWorkspaceStrategy(input.workspaceStrategy.type) || reused !== undefined;
+    const workspaces = pierCheckouts.workspacesFor(input.workspaceStrategy, git);
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
@@ -464,6 +473,31 @@ const make = Effect.gen(function* () {
         createdWorktreePath = worktreePath;
         yield* setupTracker.update(threadId, (snapshot) => ({ ...snapshot, worktreePath, branch }));
         yield* setupTracker.stageStatus(threadId, "checkout", "done");
+      }
+      if (input.workspaceStrategy.type === "pier_checkout") {
+        worktreePath = yield* pierCheckouts
+          .provision({
+            projectRoot: project.workspaceRoot,
+            threadId,
+            setup: setupTracker,
+            announce:
+              runId === null
+                ? Effect.void
+                : threads
+                    .dispatch({
+                      type: "prepared-run.progress",
+                      commandId: CommandId.make(`${input.commandId}:progress:worktree`),
+                      threadId,
+                      runId,
+                      phase: "worktree",
+                    })
+                    .pipe(Effect.mapError(mapError(input, "update-thread", threadId))),
+            onClaimed: (path) =>
+              Effect.sync(() => {
+                createdWorktreePath = path;
+              }),
+          })
+          .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
       }
 
       // A reused worktree is already recorded, and rewriting it could undo
@@ -692,7 +726,7 @@ const make = Effect.gen(function* () {
             // The thread forgets the worktree only once it is gone; a failed
             // removal leaves the directory for the user to clean up rather than
             // reusing a checkout that may be half written.
-            yield* git
+            yield* workspaces
               .removeWorktree({ cwd: project.workspaceRoot, path: removedPath, force: true })
               .pipe(
                 Effect.andThen(
@@ -781,7 +815,8 @@ const make = Effect.gen(function* () {
       const prepare = prepareInBackground(input, threadId, runId);
       if (
         runId === null ||
-        (input.workspaceStrategy.type !== "worktree" && input.reusedWorktree === undefined)
+        (!isTrackedWorkspaceStrategy(input.workspaceStrategy.type) &&
+          input.reusedWorktree === undefined)
       ) {
         return yield* prepare;
       }
@@ -1094,7 +1129,7 @@ const make = Effect.gen(function* () {
             },
             reusedWorktree: { baseRef: workspacePreparation.baseRef },
           }
-        : null;
+        : reusePierCheckout(workspacePreparation, projection.thread.worktreePath);
     return schedulePreparation(
       {
         commandId: input.commandId,

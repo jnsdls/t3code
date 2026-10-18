@@ -1,6 +1,6 @@
 import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
-import { FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
+import { AnchorIcon, FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
@@ -35,6 +35,8 @@ interface BranchToolbarEnvModeSelectorProps {
   previousWorktreeLabel?: string | null;
   previousWorktreeBranch?: string | null;
   onUsePreviousWorktree?: () => void;
+  /** The project root is a pier checkout, which offers pier checkouts in place of worktrees. */
+  pierCheckout?: boolean;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -46,7 +48,9 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   previousWorktreeLabel,
   previousWorktreeBranch = null,
   onUsePreviousWorktree,
+  pierCheckout = false,
 }: BranchToolbarEnvModeSelectorProps) {
+  const newWorkspaceMode: EnvMode = pierCheckout ? "pier" : "worktree";
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
@@ -58,7 +62,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       value: "local",
       label: resolveCurrentWorkspaceLabel(activeWorktreePath),
     },
-    { value: "worktree", label: resolveEnvModeLabel("worktree") },
+    { value: newWorkspaceMode, label: resolveEnvModeLabel(newWorkspaceMode) },
     ...(showPreviousWorktree && previousWorktreeLabel
       ? [{ value: PREVIOUS_WORKTREE_SELECT_VALUE, label: previousWorktreeLabel }]
       : []),
@@ -80,6 +84,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           <FolderGitIcon className="size-3" />
         ) : effectiveEnvMode === "worktree" ? (
           <FolderGit2Icon className="size-3" />
+        ) : effectiveEnvMode === "pier" ? (
+          <AnchorIcon className="size-3" />
         ) : (
           <FolderIcon className="size-3" />
         )}
@@ -131,6 +137,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         >
           {effectiveEnvMode === "worktree" ? (
             <FolderGit2Icon className="size-3" />
+          ) : effectiveEnvMode === "pier" ? (
+            <AnchorIcon className="size-3" />
           ) : activeWorktreePath ? (
             <FolderGitIcon className="size-3" />
           ) : (
@@ -141,8 +149,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           </ComposerContextLabel>
         </TooltipTrigger>
         <TooltipPopup>
-          {effectiveEnvMode === "worktree"
-            ? resolveEnvModeLabel("worktree")
+          {effectiveEnvMode !== "local"
+            ? resolveEnvModeLabel(effectiveEnvMode)
             : resolveCurrentWorkspaceLabel(activeWorktreePath)}
           {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
@@ -164,10 +172,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveCurrentWorkspaceLabel(activeWorktreePath)}
             </span>
           </SelectItem>
-          <SelectItem value="worktree">
+          <SelectItem value={newWorkspaceMode}>
             <span className="inline-flex items-center gap-1.5">
-              <FolderGit2Icon className="size-3" />
-              {resolveEnvModeLabel("worktree")}
+              {pierCheckout ? (
+                <AnchorIcon className="size-3" />
+              ) : (
+                <FolderGit2Icon className="size-3" />
+              )}
+              {resolveEnvModeLabel(newWorkspaceMode)}
             </span>
           </SelectItem>
           {showPreviousWorktree && previousWorktreeLabel ? (

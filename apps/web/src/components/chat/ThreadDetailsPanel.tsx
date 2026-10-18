@@ -40,6 +40,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   showOpenInPicker: boolean;
   gitCwd: string | null;
   isGitRepo: boolean;
+  pierCheckout: boolean;
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
   autoEnvironmentLabel?: string | undefined;
@@ -71,6 +72,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
+    pierCheckout: props.pierCheckout,
     environmentId: props.environmentId,
     threadId: props.threadId,
     ...(props.draftId ? { draftId: props.draftId } : {}),

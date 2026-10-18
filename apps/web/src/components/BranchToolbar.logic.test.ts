@@ -505,6 +505,16 @@ describe("resolveEffectiveEnvMode", () => {
     ).toBe("local");
   });
 
+  it("keeps new-pier-checkout mode for draft threads without a worktree path", () => {
+    expect(
+      resolveEffectiveEnvMode({
+        activeWorktreePath: null,
+        hasServerThread: false,
+        draftThreadEnvMode: "pier",
+      }),
+    ).toBe("pier");
+  });
+
   it("keeps explicit new-worktree mode for draft threads without a worktree path", () => {
     expect(
       resolveEffectiveEnvMode({
@@ -564,6 +574,10 @@ describe("resolveLockedWorkspaceLabel", () => {
 
   it("describes a worktree that is still being created as a new worktree", () => {
     expect(resolveLockedWorkspaceLabel(null, "worktree")).toBe("New worktree");
+  });
+
+  it("describes a pier checkout that is still being created", () => {
+    expect(resolveLockedWorkspaceLabel(null, "pier")).toBe("New pier checkout");
   });
 });
 
