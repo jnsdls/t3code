@@ -218,11 +218,8 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await (async () => {
-      await gitActions.refreshSelectedThreadGitStatus();
-    })().finally(() => {
-      setIsRefreshing(false);
-    });
+    await gitActions.refreshSelectedThreadGitStatus();
+    setIsRefreshing(false);
   };
 
   const content = (

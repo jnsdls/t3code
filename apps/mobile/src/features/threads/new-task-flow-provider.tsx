@@ -735,29 +735,24 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     const request = {};
     latestSwitchRef.current = request;
     setSwitchingToEnvironmentId(environmentId);
-    return await (async () => {
-      const result = await openScratch({ environmentId, input: {} });
-      if (latestSwitchRef.current !== request) return false;
-      if (result._tag === "Success") {
-        setProject(result.value);
-        return true;
-      }
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        Dialog.alert(
-          "Could not switch machine",
-          error instanceof Error
-            ? error.message
-            : "The folder for threads without a project could not be created.",
-        );
-      }
-      return false;
-    })().finally(() => {
-      if (latestSwitchRef.current === request) {
-        latestSwitchRef.current = null;
-        setSwitchingToEnvironmentId(null);
-      }
-    });
+    const result = await openScratch({ environmentId, input: {} });
+    if (latestSwitchRef.current !== request) return false;
+    latestSwitchRef.current = null;
+    setSwitchingToEnvironmentId(null);
+    if (result._tag === "Success") {
+      setProject(result.value);
+      return true;
+    }
+    if (!isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert(
+        "Could not switch machine",
+        error instanceof Error
+          ? error.message
+          : "The folder for threads without a project could not be created.",
+      );
+    }
+    return false;
   };
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {

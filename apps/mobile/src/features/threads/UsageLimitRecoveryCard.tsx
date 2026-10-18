@@ -1,4 +1,5 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -66,26 +67,22 @@ export function UsageLimitRecoveryCard({
     }
     setPending(true);
     setError(null);
-    await (async () => {
-      const result = await updateMetadata({
-        environmentId,
-        input: {
-          threadId: thread.id,
-          limitRecovery: {
-            runId,
-            resetAt,
-            ...(action === "resume" ? { autoResume: !scheduled } : { snooze: !snoozed }),
-          },
+    const result = await updateMetadata({
+      environmentId,
+      input: {
+        threadId: thread.id,
+        limitRecovery: {
+          runId,
+          resetAt,
+          ...(action === "resume" ? { autoResume: !scheduled } : { snooze: !snoozed }),
         },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    })()
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
-      })
-      .finally(() => {
-        setPending(false);
-      });
+      },
+    });
+    setPending(false);
+    if (AsyncResult.isFailure(result)) {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
+    }
   }
   return (
     <View className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-screen p-3">

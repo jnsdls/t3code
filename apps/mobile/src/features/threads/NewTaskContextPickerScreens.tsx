@@ -302,43 +302,45 @@ export function NewTaskBranchPickerRouteScreen() {
     selectingBranchNameRef.current = branch.name;
     void Haptics.selectionAsync();
 
-    return await (async () => {
-      if (!flow.selectedProject) return;
-      setSwitchingBranchName(branch.name);
-      const result = await checkoutNewTaskBranch({
-        branch,
-        project: flow.selectedProject,
-        workspaceMode: flow.workspaceMode,
-        switchRef,
-      });
-      if (result._tag === "Failure") {
-        if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          Dialog.alert(
-            "Could not switch branch",
-            error instanceof Error ? error.message : "The branch could not be checked out.",
-          );
-        }
-        return;
-      }
-
-      // The checkout has already changed the repository. Persist the matching
-      // draft selection even if the native sheet was dismissed while the
-      // command was in flight; only visible-screen work is focus-gated below.
-      flow.selectBranch(result.value);
-      if (!mountedRef.current || !navigation.isFocused()) {
-        return;
-      }
-      flow.setBranchQuery("");
-      allowSelectionNavigationRef.current = true;
-      navigation.goBack();
-    })().finally(() => {
+    const project = flow.selectedProject;
+    if (!project) {
       selectingBranchNameRef.current = null;
-      allowSelectionNavigationRef.current = false;
-      if (mountedRef.current) {
-        setSwitchingBranchName(null);
-      }
+      return;
+    }
+    setSwitchingBranchName(branch.name);
+    const result = await checkoutNewTaskBranch({
+      branch,
+      project,
+      workspaceMode: flow.workspaceMode,
+      switchRef,
     });
+    if (mountedRef.current) setSwitchingBranchName(null);
+    if (result._tag === "Failure") {
+      selectingBranchNameRef.current = null;
+      if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        Dialog.alert(
+          "Could not switch branch",
+          error instanceof Error ? error.message : "The branch could not be checked out.",
+        );
+      }
+      return;
+    }
+
+    // The checkout has already changed the repository. Persist the matching
+    // draft selection even if the native sheet was dismissed while the
+    // command was in flight; only visible-screen work is focus-gated below.
+    flow.selectBranch(result.value);
+    if (!mountedRef.current || !navigation.isFocused()) {
+      selectingBranchNameRef.current = null;
+      return;
+    }
+    flow.setBranchQuery("");
+    // beforeRemove blocks dismissal while a switch is in flight; this one is ours.
+    allowSelectionNavigationRef.current = true;
+    navigation.goBack();
+    allowSelectionNavigationRef.current = false;
+    selectingBranchNameRef.current = null;
   };
 
   return (

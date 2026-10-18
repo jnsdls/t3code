@@ -384,45 +384,40 @@ function ThreadSettingsSessionProvider(
     const pending = { favorite: !previousFavorite, settings: currentSettings, pending: true };
     pendingFavorites.current.set(key, pending);
     void Haptics.selectionAsync();
-    await (async () => {
-      const result = await saveSettings({
-        environmentId: environmentId,
-        input: {
-          patch: {
-            setModelFavorites: [
-              {
-                provider: option.selection.instanceId,
-                model: option.selection.model,
-                favorite: pending.favorite,
-              },
-            ],
-            ...(currentSettings.favorites === null
-              ? { migrateModelPreferences: { favorites } }
-              : {}),
-          },
+    const result = await saveSettings({
+      environmentId: environmentId,
+      input: {
+        patch: {
+          setModelFavorites: [
+            {
+              provider: option.selection.instanceId,
+              model: option.selection.model,
+              favorite: pending.favorite,
+            },
+          ],
+          ...(currentSettings.favorites === null ? { migrateModelPreferences: { favorites } } : {}),
         },
-      });
-      if (
-        AsyncResult.isSuccess(result) &&
-        registry.get(environmentServerConfigsAtom).get(environmentId)?.settings.favorites ===
-          currentSettings.favorites
-      ) {
-        pending.pending = false;
-      }
-    })().finally(() => {
-      if (pending.pending && pendingFavorites.current.get(key) === pending) {
-        if (
-          previous &&
-          !previous.pending &&
-          registry.get(environmentServerConfigsAtom).get(environmentId)?.settings.favorites ===
-            previous.settings.favorites
-        ) {
-          pendingFavorites.current.set(key, previous);
-        } else {
-          pendingFavorites.current.delete(key);
-        }
-      }
+      },
     });
+    if (
+      AsyncResult.isSuccess(result) &&
+      registry.get(environmentServerConfigsAtom).get(environmentId)?.settings.favorites ===
+        currentSettings.favorites
+    ) {
+      pending.pending = false;
+    }
+    if (pending.pending && pendingFavorites.current.get(key) === pending) {
+      if (
+        previous &&
+        !previous.pending &&
+        registry.get(environmentServerConfigsAtom).get(environmentId)?.settings.favorites ===
+          previous.settings.favorites
+      ) {
+        pendingFavorites.current.set(key, previous);
+      } else {
+        pendingFavorites.current.delete(key);
+      }
+    }
   };
   const toggleHidden = (option: ModelOption) => {
     if (
