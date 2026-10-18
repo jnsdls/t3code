@@ -1,3 +1,4 @@
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { resolveMobileMarkdownMediaSource } from "../../lib/markdownMediaSource";
 import { getBrowseDirectoryPath } from "@t3tools/client-runtime/state/projects";
@@ -86,7 +87,9 @@ export function FileMarkdownPreview(props: {
       return;
     }
     setIsPullRefreshing(true);
-    await Promise.resolve(props.onRefresh()).finally(() => setIsPullRefreshing(false));
+    // RefreshControl only needs the spinner cleared; the caller surfaces its own errors.
+    await settlePromise(async () => props.onRefresh?.());
+    setIsPullRefreshing(false);
   };
   const markdownDirectory = getBrowseDirectoryPath(
     resolveWorkspaceFilePath(props.cwd, props.relativePath),

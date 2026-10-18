@@ -1,3 +1,5 @@
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -502,7 +504,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullToRefresh = async () => {
     setIsPullRefreshing(true);
-    await Promise.resolve(refreshSelectedSection()).finally(() => setIsPullRefreshing(false));
+    await refreshSelectedSection();
+    setIsPullRefreshing(false);
   };
   const reviewFileNavigatorRef = useRef<ReviewFileNavigatorHandle>(null);
   const reviewFiles = parsedDiff.kind === "files" ? parsedDiff.files : [];
@@ -551,19 +554,20 @@ export function ReviewSheet(props: ReviewSheetProps) {
     reportShowcaseSceneRendered({ scene: "review", themeId: nativeBridge.themeId });
   };
 
-  const handleSelectFile = (fileId: string | null) => {
+  const handleSelectFile = async (fileId: string | null) => {
     loadVisibleFile(fileId, true);
     commentSelection.clearSelection();
     if (fileId !== null && collapsedFileIds.includes(fileId)) {
       toggleExpandedFile(fileId);
     }
-    const navigation =
-      fileId === null
-        ? nativeReviewDiffViewRef.current?.scrollToTop(true)
-        : nativeReviewDiffViewRef.current?.scrollToFile(fileId, true);
-    void navigation?.catch((error: unknown) => {
-      console.error("[review] Failed to navigate to diff file", error);
-    });
+    const nativeView = nativeReviewDiffViewRef.current;
+    if (!nativeView) return;
+    const result = await settlePromise(() =>
+      fileId === null ? nativeView.scrollToTop(true) : nativeView.scrollToFile(fileId, true),
+    );
+    if (AsyncResult.isFailure(result)) {
+      console.error("[review] Failed to navigate to diff file", squashAtomCommandFailure(result));
+    }
   };
   const handleVisibleFileChange = (
     event: NativeSyntheticEvent<{ readonly fileId?: string | null }>,
@@ -577,7 +581,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
       files={nativeReviewDiffData.files}
       headerInset={insets.top}
       sectionId={selectedSection?.id ?? null}
-      onSelectFile={handleSelectFile}
+      onSelectFile={(fileId) => void handleSelectFile(fileId)}
     />
   );
 

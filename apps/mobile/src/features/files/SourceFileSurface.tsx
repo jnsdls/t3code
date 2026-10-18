@@ -1,3 +1,4 @@
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import type { ComponentType } from "react";
@@ -171,7 +172,9 @@ function useSourceFileRefresh(onRefresh: SourceFileSurfaceProps["onRefresh"]) {
       return;
     }
     setIsPullRefreshing(true);
-    await Promise.resolve(onRefresh()).finally(() => setIsPullRefreshing(false));
+    // RefreshControl only needs the spinner cleared; the caller surfaces its own errors.
+    await settlePromise(async () => onRefresh());
+    setIsPullRefreshing(false);
   };
   return { isPullRefreshing, handlePullToRefresh };
 }
