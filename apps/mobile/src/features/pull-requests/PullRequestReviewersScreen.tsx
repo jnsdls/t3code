@@ -1,3 +1,4 @@
+import { AsyncResult } from "effect/reactivity";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { usePullRequestConnected } from "./usePullRequestConnected";
@@ -103,32 +104,27 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     inFlight.current = true;
     setPending(`${candidate.kind}:${candidate.id}`);
     setError(null);
-    await (async () => {
-      const response = await request({
-        ...target,
-        input: {
-          ...target.input,
-          reviewers: [{ id: candidate.id, kind: candidate.kind }],
-          requested: !candidate.isRequested,
-        },
-      });
-      if (response._tag === "Failure") throw squashAtomCommandFailure(response);
-      if (!pr?.capabilities.reviewers.listCandidates) {
-        setQuery("");
-        detail.refresh();
-      }
-    })()
-      .catch((cause: unknown) => {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Couldn't update this review request. Try again.",
-        );
-      })
-      .finally(() => {
-        inFlight.current = false;
-        setPending(null);
-      });
+    const response = await request({
+      ...target,
+      input: {
+        ...target.input,
+        reviewers: [{ id: candidate.id, kind: candidate.kind }],
+        requested: !candidate.isRequested,
+      },
+    });
+    inFlight.current = false;
+    setPending(null);
+    if (AsyncResult.isFailure(response)) {
+      const cause = squashAtomCommandFailure(response);
+      setError(
+        cause instanceof Error ? cause.message : "Couldn't update this review request. Try again.",
+      );
+      return;
+    }
+    if (!pr?.capabilities.reviewers.listCandidates) {
+      setQuery("");
+      detail.refresh();
+    }
   };
   const listCandidates = pr?.capabilities.reviewers.listCandidates === true;
   const searchOptions = {

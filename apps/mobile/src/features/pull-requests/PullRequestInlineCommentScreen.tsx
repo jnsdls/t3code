@@ -1,3 +1,5 @@
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useRef, useState } from "react";
@@ -64,13 +66,11 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
         },
       ],
     }));
-    await (async () => {
-      await store.flush();
-      navigation.goBack();
-    })().finally(() => {
-      pending.current = false;
-      setBusy(false);
-    });
+    // flush reports write failures through the draft store's error field.
+    const result = await settlePromise(() => store.flush());
+    pending.current = false;
+    setBusy(false);
+    if (AsyncResult.isSuccess(result)) navigation.goBack();
   };
   return (
     <PullRequestSheetContent

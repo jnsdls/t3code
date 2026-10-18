@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect } from "@react-navigation/native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { usePullRequestConnected } from "../usePullRequestConnected";
 import { composerPullRequests } from "../../../state/pull-requests";
@@ -45,16 +46,13 @@ export function useReviewGuide(params: PullRequestParams) {
     pending.current = true;
     setStarting(true);
     setError(null);
-    await (async () => {
-      const result = await generate(target);
-      if (result._tag === "Failure") {
-        const cause = squashAtomCommandFailure(result);
-        setError(cause instanceof Error ? cause.message : "Could not start the review guide.");
-      }
-    })().finally(() => {
-      pending.current = false;
-      setStarting(false);
-    });
+    const result = await generate(target);
+    pending.current = false;
+    setStarting(false);
+    if (AsyncResult.isFailure(result)) {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : "Could not start the review guide.");
+    }
   };
   return { ...query, enabled, canWrite, running, write, startError: error };
 }

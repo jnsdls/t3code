@@ -1,10 +1,14 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  executeAtomQuery,
+  settlePromise,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestAction } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
-import { Atom } from "effect/reactivity";
+import { Atom, AsyncResult } from "effect/reactivity";
 import { use, useRef, useState } from "react";
 import { Linking, Platform, Share } from "react-native";
 import type { MenuProps } from "../../components/ui/Menu.types";
@@ -56,7 +60,7 @@ export function usePullRequestListActions(
     if (pending.current) return;
     pending.current = true;
     setBusyKey(scopedPullRequestListKey(entry));
-    await (async () => {
+    const result = await settlePromise(async () => {
       const target = pullRequestTarget(params(entry));
       // List rows do not subscribe to expensive detail reads.
       const response = await executeAtomQuery(registry, composerPullRequests.detail(target), {
@@ -93,17 +97,16 @@ export function usePullRequestListActions(
             ? { state: "open" }
             : { isDraft: action === "draft" },
       );
-    })()
-      .catch((cause: unknown) => {
-        Dialog.alert(
-          "Couldn't update this pull request",
-          cause instanceof Error ? cause.message : "Try again.",
-        );
-      })
-      .finally(() => {
-        pending.current = false;
-        setBusyKey(null);
-      });
+    });
+    pending.current = false;
+    setBusyKey(null);
+    if (AsyncResult.isFailure(result)) {
+      const cause = squashAtomCommandFailure(result);
+      Dialog.alert(
+        "Couldn't update this pull request",
+        cause instanceof Error ? cause.message : "Try again.",
+      );
+    }
   };
   const select = (entry: EnvironmentPullRequestListEntry, action: string) => {
     if (action === "open") {
