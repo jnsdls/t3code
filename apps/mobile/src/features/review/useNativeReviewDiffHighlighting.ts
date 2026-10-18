@@ -69,19 +69,17 @@ export function useNativeReviewDiffHighlighting(input: {
     const requestRange = visibleRange;
     const engine: NativeReviewDiffHighlightEngine = "native";
 
-    void (async () => {
-      try {
-        const result = await highlightNativeReviewDiffVisibleRows({
-          files,
-          rows,
-          scheme,
-          engine,
-          firstRowIndex: requestRange.firstRowIndex,
-          lastRowIndex: requestRange.lastRowIndex,
-          alreadyHighlightedRowIds: highlightedRowIdsRef.current,
-          signal: abortController.signal,
-        });
-
+    void highlightNativeReviewDiffVisibleRows({
+      files,
+      rows,
+      scheme,
+      engine,
+      firstRowIndex: requestRange.firstRowIndex,
+      lastRowIndex: requestRange.lastRowIndex,
+      alreadyHighlightedRowIds: highlightedRowIdsRef.current,
+      signal: abortController.signal,
+    })
+      .then((result) => {
         if (abortController.signal.aborted || result.rowCount === 0) {
           return;
         }
@@ -104,7 +102,8 @@ export function useNativeReviewDiffHighlighting(input: {
             tokensByRowId: result.tokensByRowId,
           }),
         );
-      } catch (error) {
+      })
+      .catch((error: unknown) => {
         if (!abortController.signal.aborted) {
           logReviewDiffDiagnostic("native visible highlight failed", {
             error,
@@ -114,8 +113,7 @@ export function useNativeReviewDiffHighlighting(input: {
             lastRowIndex: requestRange.lastRowIndex,
           });
         }
-      }
-    })();
+      });
 
     return () => abortController.abort();
   }, [enabled, files, resetKey, rows, scheme, visibleRange]);
