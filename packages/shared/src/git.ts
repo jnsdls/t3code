@@ -330,6 +330,7 @@ function toRemoteStatusPart(status: VcsStatusResult): VcsStatusRemoteResult {
       ? {}
       : { aheadOfDefaultCount: status.aheadOfDefaultCount }),
     pr: status.pr,
+    ...(status.pier ? { pier: status.pier } : {}),
   };
 }
 

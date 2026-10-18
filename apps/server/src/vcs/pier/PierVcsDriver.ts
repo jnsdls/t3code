@@ -8,6 +8,7 @@ import * as Path from "effect/Path";
 import {
   VcsProcessExitError,
   VcsUnsupportedOperationError,
+  type PierLanding,
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsStatusLocalResult,
@@ -50,14 +51,60 @@ export function pierLocalStatus(status: PierCli.PierStatus): VcsStatusLocalResul
   };
 }
 
+export function pierLanding(view: PierCli.PierLandingView): PierLanding {
+  const pullRequest = view.pull_request;
+  // Each reviewer's reviews come oldest first; the latest one stands.
+  const latestReviews = new Map((pullRequest?.reviews ?? []).map((r) => [r.login, r.state]));
+  const latest = [...latestReviews.values()];
+  const checks = pullRequest?.checks ?? [];
+  const countChecks = (conclusion: string) =>
+    checks.filter((check) => check.conclusion === conclusion).length;
+  return {
+    id: view.id,
+    tip: view.tip,
+    state: view.state,
+    reasons: view.reasons ?? [],
+    landed: view.landed,
+    pullRequest:
+      pullRequest == null
+        ? null
+        : {
+            number: pullRequest.number,
+            url: pullRequest.url,
+            approvals: latest.filter((state) => state === "approved").length,
+            changesRequested: latest.filter((state) => state === "changes_requested").length,
+            checks: {
+              pending: countChecks("pending"),
+              passing: countChecks("success"),
+              failing: countChecks("failure"),
+            },
+          },
+  };
+}
+
 export function pierRemoteStatus(status: PierCli.PierStatus): VcsStatusRemoteResult {
   const base = status.main?.base;
+  const resolved = new Set((status.resolved ?? []).map((resolution) => resolution.path));
+  const serverError =
+    [status.main_error, status.on_main_error, status.landing_error, status.conflicts_error].find(
+      (error) => error != null,
+    ) ?? null;
   return {
     hasUpstream: false,
     aheadCount: 0,
     behindCount: base?.state === "behind" ? (base.commits ?? 0) : 0,
     aheadOfDefaultCount: 0,
     pr: null,
+    pier: {
+      pinned: status.pinned,
+      pinnedIsMain: status.on_main === true,
+      mainRewritten: base?.state === "unreachable",
+      landing: status.landing ? pierLanding(status.landing) : null,
+      serverError,
+      conflicts: (status.conflicts ?? [])
+        .map((conflict) => conflict.path)
+        .filter((path) => !resolved.has(path)),
+    },
   };
 }
 
@@ -132,14 +179,16 @@ export const make = Effect.gen(function* () {
   // enclosing repository; without pier on PATH, pier's own commands fail.
   const findRoot = cli.findCheckoutRoot;
 
-  const status = (operation: string, cwd: string) =>
-    cli.status(cwd).pipe(Effect.mapError(toVcsError(operation)));
+  const status = (operation: string, cwd: string, options?: { readonly local?: boolean }) =>
+    (options?.local ? cli.localStatus(cwd) : cli.status(cwd)).pipe(
+      Effect.mapError(toVcsError(operation)),
+    );
 
   const getDiffPreview: NonNullable<VcsDriver.VcsDriver["Service"]["getDiffPreview"]> = Effect.fn(
     "PierVcsDriver.getDiffPreview",
   )(function* (input) {
     const operation = "PierVcsDriver.getDiffPreview";
-    const current = yield* status(operation, input.cwd);
+    const current = yield* status(operation, input.cwd, { local: true });
     const [uncommitted, branch] = yield* Effect.all(
       [
         // From the pinned changeset to the files on disk: only what is not yet committed.
@@ -236,7 +285,7 @@ export const make = Effect.gen(function* () {
       unsupported("PierVcsDriver.initRepository", "Create pier checkouts with `pier checkout`."),
     getDiffPreview,
     localStatus: (cwd) =>
-      status("PierVcsDriver.localStatus", cwd).pipe(Effect.map(pierLocalStatus)),
+      status("PierVcsDriver.localStatus", cwd, { local: true }).pipe(Effect.map(pierLocalStatus)),
     remoteStatus: (cwd) =>
       status("PierVcsDriver.remoteStatus", cwd).pipe(Effect.map(pierRemoteStatus)),
   });

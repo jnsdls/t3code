@@ -76,6 +76,40 @@ describe("PierGitWorkflowOverlay", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("abandons nothing while the changeset's landing is under way or unknown", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const pier = yield* makeFakePier;
+      yield* Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        for (const [index, server] of [
+          {
+            landing: { id: 7, tip: "cs-pinned", state: "merging", landed: null },
+            landing_error: null,
+          },
+          { landing: null, landing_error: "not logged in: run `pier login`" },
+        ].entries()) {
+          const checkout = `${config.worktreesDir}/widgets-${index}/t3-0123abcd`;
+          yield* writePierCheckoutMarker(checkout);
+          yield* pier.setStatus({
+            root: checkout,
+            server: "http://pier.test",
+            upstream: "acme/widgets",
+            pinned: "cs-pinned",
+            agent: "t3-0123abcd",
+            cone: ["src"],
+            uncommitted: [],
+            ...server,
+          });
+          yield* workflow.removeWorktree({ cwd: "/projects/widgets", path: checkout, force: true });
+          assert.isFalse(yield* fileSystem.exists(checkout));
+        }
+        assert.isFalse((yield* pier.calls).some((call) => call.includes("|abandon")));
+      }).pipe(Effect.provide(layerWithPier({ environment: pier.environment })));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("abandons nothing for a checkout another agent owns", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

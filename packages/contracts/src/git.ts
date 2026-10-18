@@ -9,6 +9,7 @@ import {
 } from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
+import { PierCheckoutRemoteStatus } from "./pier.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const GitFilePath = Schema.String.check(Schema.isNonEmpty());
@@ -245,6 +246,7 @@ const VcsStatusRemoteShape = {
   behindCount: NonNegativeInt,
   aheadOfDefaultCount: Schema.optional(NonNegativeInt),
   pr: Schema.NullOr(VcsStatusChangeRequest),
+  pier: Schema.optional(PierCheckoutRemoteStatus),
 };
 
 export const VcsStatusLocalResult = Schema.Struct(VcsStatusLocalShape);

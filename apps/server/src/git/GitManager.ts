@@ -161,6 +161,18 @@ export class GitManager extends Context.Service<
       never,
       Scope.Scope
     >;
+    /** A commit message for changes git does not hold, such as a pier checkout's edits. */
+    readonly suggestCommitMessage: (input: {
+      readonly cwd: string;
+      readonly threadId?: ThreadId | undefined;
+      readonly refName: string | null;
+      /** `git diff --name-status` style lines. */
+      readonly summary: string;
+      readonly patch: string;
+    }) => Effect.Effect<
+      { readonly subject: string; readonly body: string },
+      GitManagerServiceError
+    >;
   }
 >()("t3/git/GitManager") {}
 
@@ -3162,6 +3174,52 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const suggestCommitMessage: GitManager["Service"]["suggestCommitMessage"] = Effect.fn(
+    "GitManager.suggestCommitMessage",
+  )(function* (input) {
+    const settings = yield* projectSettingsFor(input).pipe(
+      Effect.flatMap(({ settings, projectId }) =>
+        (settings.sourceControlWriterModelSelection === null
+          ? Effect.succeed(settings.textGenerationModelSelection)
+          : providerRegistry.getProviders.pipe(
+              Effect.map((providers) =>
+                ServerSettings.resolveSourceControlWriterModelSelection(
+                  settings,
+                  providers,
+                  projectId,
+                ),
+              ),
+            )
+        ).pipe(
+          Effect.map((modelSelection) => ({
+            modelSelection,
+            style: settings.sourceControlWritingStyle,
+          })),
+        ),
+      ),
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "suggestCommitMessage",
+            cwd: input.cwd,
+            detail: "Failed to get server settings.",
+            cause,
+          }),
+      ),
+    );
+    const policy = yield* resolveStylePolicy(input.cwd, settings);
+    const generated = yield* textGeneration.generateCommitMessage({
+      cwd: input.cwd,
+      branch: input.refName,
+      stagedSummary: limitContext(input.summary, 8_000),
+      stagedPatch: limitContext(input.patch, 50_000),
+      ...(policy ? { policy } : {}),
+      modelSelection: settings.modelSelection,
+    });
+    const { subject, body } = sanitizeCommitMessage(generated);
+    return { subject, body };
+  });
+
   return GitManager.of({
     createWorktree,
     localStatus,
@@ -3177,6 +3235,7 @@ export const make = Effect.gen(function* () {
     subscribePullRequestStateChanges: PubSub.subscribe(pullRequestStateChanges).pipe(
       Effect.map((subscription) => Stream.fromSubscription(subscription)),
     ),
+    suggestCommitMessage,
   });
 });
 

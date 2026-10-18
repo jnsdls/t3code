@@ -200,6 +200,11 @@ export class VcsStatusBroadcaster extends Context.Service<
       input: VcsStatusSubscriptionInput,
       options?: StreamStatusOptions,
     ) => Stream.Stream<VcsStatusStreamEvent, GitManagerServiceError>;
+    /** Each remote status a refresh publishes because it changed, for any cwd. */
+    readonly remoteStatusChanges: Stream.Stream<{
+      readonly cwd: string;
+      readonly remote: VcsStatusRemoteResult | null;
+    }>;
   }
 >()("t3/vcs/VcsStatusBroadcaster") {}
 
@@ -749,6 +754,11 @@ export const make = Effect.gen(function* () {
     refreshStatus,
     refreshPullRequestStatus,
     streamStatus,
+    remoteStatusChanges: Stream.fromPubSub(changesPubSub).pipe(
+      Stream.flatMap(({ cwd, event }) =>
+        event._tag === "localUpdated" ? Stream.empty : Stream.make({ cwd, remote: event.remote }),
+      ),
+    ),
   });
 });
 

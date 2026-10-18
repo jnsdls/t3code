@@ -11,6 +11,7 @@ import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
 import BaseGitActionsControl from "../GitActionsControl";
+import PierActionsControl from "../PierActionsControl";
 import ProjectScriptsControl, {
   type NewProjectScriptInput,
   type ProjectScriptActionResult,
@@ -159,7 +160,14 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 {props.isGitRepo && !props.pierCheckout ? (
                   <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
                 ) : null}
-                {props.activeProjectName ? (
+                {props.activeProjectName && props.pierCheckout ? (
+                  <PierActionsControl
+                    compact={density !== "full"}
+                    gitCwd={props.gitCwd}
+                    activeThreadRef={activeThreadRef}
+                    {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                  />
+                ) : props.activeProjectName ? (
                   <GitActionsControl
                     displayMode="panel"
                     compact={density !== "full"}

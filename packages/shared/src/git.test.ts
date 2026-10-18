@@ -289,6 +289,32 @@ describe("applyGitStatusStreamEvent", () => {
       pr: null,
     });
   });
+
+  it("keeps a pier checkout's landing when only local status changes", () => {
+    const pier = {
+      pinned: "cs-pinned",
+      pinnedIsMain: false,
+      mainRewritten: false,
+      landing: null,
+      serverError: null,
+      conflicts: ["a.ts"],
+    };
+    const current = applyGitStatusStreamEvent(null, {
+      _tag: "remoteUpdated",
+      remote: { hasUpstream: false, aheadCount: 0, behindCount: 0, pr: null, pier },
+    });
+    const local = {
+      isRepo: true,
+      pierCheckout: true,
+      hasPrimaryRemote: false,
+      isDefaultRef: false,
+      refName: "t3-0123abcd",
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+    };
+
+    expect(applyGitStatusStreamEvent(current, { _tag: "localUpdated", local }).pier).toEqual(pier);
+  });
 });
 
 describe("sanitizeFeatureBranchName", () => {

@@ -216,4 +216,140 @@ describe("PierVcsDriver", () => {
       }).pipe(Effect.provide(layerFor(pier.environment)));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("reads local status without the server, and the landing from a full status", () =>
+    Effect.gen(function* () {
+      const { pier, checkout } = yield* setup;
+      yield* pier.setStatus({
+        root: checkout,
+        server: "http://pier.test",
+        upstream: "acme/widgets",
+        pinned: "cs-pinned",
+        agent: "t3-0123abcd",
+        cone: ["src"],
+        main: { branch: "main", base: { state: "behind", base: "sha1:aa", commits: 2 } },
+        main_error: null,
+        // An older changeset on main: not the tip, yet nothing of the checkout's own.
+        on_main: true,
+        on_main_error: null,
+        landing: {
+          id: 4,
+          tip: "cs-pinned",
+          state: "flagged",
+          reasons: ["checks failed"],
+          landed: null,
+          pull_request: {
+            number: 42,
+            url: "https://github.com/acme/widgets/pull/42",
+            reviews: [
+              { login: "ana", state: "changes_requested", body: "", url: "" },
+              { login: "ana", state: "approved", body: "", url: "" },
+              { login: "bo", state: "commented", body: "", url: "" },
+            ],
+            comments: [],
+            checks: [
+              { name: "test", conclusion: "failure", url: "" },
+              { name: "lint", conclusion: "success", url: "" },
+            ],
+          },
+        },
+        landing_error: null,
+        conflicts: [{ path: "src/a.ts", kind: "text", base: null, main: null, changeset: null }],
+        conflicts_error: null,
+        resolved: [],
+        uncommitted: [{ path: "src/a.ts", status: "modified" }],
+      });
+      yield* Effect.gen(function* () {
+        const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+        const { driver } = yield* registry.resolve({ cwd: checkout });
+
+        const local = yield* driver.localStatus!(checkout);
+        assert.equal(local.refName, "t3-0123abcd");
+        assert.include((yield* pier.calls).at(-1), "|status --local --json");
+
+        const remote = yield* driver.remoteStatus!(checkout);
+        assert.include((yield* pier.calls).at(-1), "|status --json");
+        assert.equal(remote?.behindCount, 2);
+        assert.deepEqual(remote?.pier, {
+          pinned: "cs-pinned",
+          pinnedIsMain: true,
+          landing: {
+            id: 4,
+            tip: "cs-pinned",
+            state: "flagged",
+            reasons: ["checks failed"],
+            landed: null,
+            pullRequest: {
+              number: 42,
+              url: "https://github.com/acme/widgets/pull/42",
+              approvals: 1,
+              changesRequested: 0,
+              checks: { pending: 0, passing: 1, failing: 1 },
+            },
+          },
+          mainRewritten: false,
+          serverError: null,
+          conflicts: ["src/a.ts"],
+        });
+      }).pipe(Effect.provide(layerFor(pier.environment)));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "reports what the server could not answer, a rewritten main, and settled conflicts",
+    () =>
+      Effect.gen(function* () {
+        const { pier, checkout } = yield* setup;
+        const base = {
+          root: checkout,
+          server: "http://pier.test",
+          upstream: "acme/widgets",
+          pinned: "cs-pinned",
+          agent: "t3-0123abcd",
+          cone: ["src"],
+          uncommitted: [],
+        };
+        yield* Effect.gen(function* () {
+          const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+          const { driver } = yield* registry.resolve({ cwd: checkout });
+
+          // An expired login answers nothing, and the checkout must not look settled.
+          yield* pier.setStatus({
+            ...base,
+            main: null,
+            main_error: "not logged in: run `pier login`",
+            on_main: null,
+            on_main_error: "not logged in: run `pier login`",
+            landing: null,
+            landing_error: "not logged in: run `pier login`",
+            conflicts: null,
+            conflicts_error: "not logged in: run `pier login`",
+            resolved: [],
+          });
+          const offline = yield* driver.remoteStatus!(checkout);
+          assert.equal(offline?.pier?.serverError, "not logged in: run `pier login`");
+
+          yield* pier.setStatus({
+            ...base,
+            main: { branch: "main", base: { state: "unreachable", base: "sha1:aa" } },
+            main_error: null,
+            on_main: false,
+            on_main_error: null,
+            landing: null,
+            landing_error: null,
+            conflicts: [
+              { path: "src/a.ts", kind: "text", base: null, main: null, changeset: null },
+              { path: "src/b.ts", kind: "text", base: null, main: null, changeset: null },
+            ],
+            conflicts_error: null,
+            resolved: [{ path: "src/a.ts", took: "main" }],
+          });
+          const rewritten = yield* driver.remoteStatus!(checkout);
+          assert.equal(rewritten?.behindCount, 0);
+          assert.isTrue(rewritten?.pier?.mainRewritten);
+          assert.isNull(rewritten?.pier?.serverError);
+          assert.deepEqual(rewritten?.pier?.conflicts, ["src/b.ts"]);
+        }).pipe(Effect.provide(layerFor(pier.environment)));
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 });

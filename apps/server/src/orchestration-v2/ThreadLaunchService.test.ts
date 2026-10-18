@@ -1993,7 +1993,7 @@ it.effect("creates a pier checkout beside the project's own and runs setup in it
       assert.equal(projection.thread.worktreePath, checkout);
       assert.equal(projection.thread.branch, null);
       assert.deepEqual(yield* pier.calls, [
-        `${yield* fs.realPath(projectRoot)}|status --json`,
+        `${yield* fs.realPath(projectRoot)}|status --local --json`,
         `${yield* fs.realPath(path.dirname(checkout))}|--server http://pier.test --upstream acme/widgets checkout ${checkout} --agent t3-0123abcd --cone src --cone docs --json`,
       ]);
       assert.equal(harness.createWorktree.mock.calls.length, 0);

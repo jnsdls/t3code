@@ -20,6 +20,7 @@ import { useNavigation } from "@react-navigation/native";
 
 import { useEnvironmentScope } from "../../state/session";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
+import { usePierQuickAction } from "./usePierQuickAction";
 import {
   basename,
   getTerminalStatusLabel,
@@ -130,16 +131,23 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const isDefaultRef = gitStatus?.isDefaultRef ?? false;
 
   const pierCheckout = gitStatus?.pierCheckout === true;
+  const pierQuickAction = usePierQuickAction({
+    environmentId,
+    threadId,
+    gitStatus,
+    canWrite: canWriteSourceControl,
+  });
 
   const quickAction = (() => {
-    if (!isRepo || pierCheckout) {
+    if (pierCheckout) {
+      return { ...pierQuickAction.quickAction, kind: "show_hint" as const };
+    }
+    if (!isRepo) {
       return {
         label: "Git unavailable",
         disabled: true,
         kind: "show_hint" as const,
-        hint: pierCheckout
-          ? "This workspace is a pier checkout."
-          : "This workspace is not a git repository.",
+        hint: "This workspace is not a git repository.",
       };
     }
     const action = resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote);
@@ -209,6 +217,10 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
 
   const runQuickAction = async () => {
     if (quickAction.disabled) return;
+    if (pierCheckout) {
+      await pierQuickAction.run();
+      return;
+    }
     if (quickAction.kind === "open_pr") {
       await openExistingPr();
       return;
