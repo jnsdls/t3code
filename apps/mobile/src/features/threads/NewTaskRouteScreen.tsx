@@ -237,7 +237,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     if (!scratchEnvironment || scratchStartInFlightRef.current) return;
     const environmentId = scratchEnvironment.environmentId;
     scratchStartInFlightRef.current = true;
-    try {
+    return await (async () => {
       const result = await openScratch({ environmentId, input: {} });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
@@ -252,9 +252,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         return;
       }
       await selectProject(result.value);
-    } finally {
+    })().finally(() => {
       scratchStartInFlightRef.current = false;
-    }
+    });
   }
 
   useEffect(() => {
