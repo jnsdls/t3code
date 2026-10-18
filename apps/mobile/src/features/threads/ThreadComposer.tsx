@@ -2,6 +2,8 @@ import * as Dialog from "../../components/ui/Dialog";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import { useAtomValue } from "@effect/atom-react";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { pastedTextDisposition, replaceTextSelection } from "@t3tools/client-runtime/text-paste";
@@ -547,20 +549,20 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
-    return await (async () => {
-      const messageId = await onSendMessage(followUp);
-      if (messageId === null) {
-        return;
-      }
-      // Armed after the send so its preference read and native Activity start don't contend
-      // with the queued-message feedback on the tap frame.
-      armAgentAwarenessLiveActivityForLocalWork({
-        environmentId: props.environmentId,
-        threadTitle: props.selectedThread.title,
-        projectTitle: props.environmentLabel ?? "T3 Code",
-      });
-    })().finally(() => {
-      inFlightThreadIdsRef.current.delete(threadKey);
+    const sent = await settlePromise(() => onSendMessage(followUp));
+    inFlightThreadIdsRef.current.delete(threadKey);
+    if (AsyncResult.isFailure(sent)) {
+      // The composer state already surfaces send errors; only the lock needed releasing.
+      console.error("[composer] send failed", squashAtomCommandFailure(sent));
+      return;
+    }
+    if (sent.value === null) return;
+    // Armed after the send so its preference read and native Activity start don't contend
+    // with the queued-message feedback on the tap frame.
+    armAgentAwarenessLiveActivityForLocalWork({
+      environmentId: props.environmentId,
+      threadTitle: props.selectedThread.title,
+      projectTitle: props.environmentLabel ?? "T3 Code",
     });
   };
 

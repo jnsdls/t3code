@@ -113,12 +113,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     busyRef.current = true;
     setBusyRunId(runId);
     void Haptics.selectionAsync();
-    await (async () => {
-      await reorder({ ...target, input: { threadId: target.threadId, runId, beforeRunId } });
-    })().finally(() => {
-      busyRef.current = false;
-      setBusyRunId(null);
-    });
+    await reorder({ ...target, input: { threadId: target.threadId, runId, beforeRunId } });
+    busyRef.current = false;
+    setBusyRunId(null);
   };
 
   const act = async (runId: RunId, action: QueueAction) => {
@@ -150,23 +147,20 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     busyRef.current = true;
     setBusyRunId(runId);
     void Haptics.selectionAsync();
-    await (async () => {
-      if (action === "remove") {
-        await cancel(buildCancelQueuedRunCommand({ ...target, runId }));
-      } else if (workflow?.activeRun && workflow.canPromoteToSteer) {
-        await promote({
-          ...target,
-          input: {
-            threadId: target.threadId,
-            queuedRunId: runId,
-            targetRunId: workflow.activeRun.id,
-          },
-        });
-      }
-    })().finally(() => {
-      busyRef.current = false;
-      setBusyRunId(null);
-    });
+    if (action === "remove") {
+      await cancel(buildCancelQueuedRunCommand({ ...target, runId }));
+    } else if (workflow?.activeRun && workflow.canPromoteToSteer) {
+      await promote({
+        ...target,
+        input: {
+          threadId: target.threadId,
+          queuedRunId: runId,
+          targetRunId: workflow.activeRun.id,
+        },
+      });
+    }
+    busyRef.current = false;
+    setBusyRunId(null);
   };
 
   const canReorder = workflow?.canReorder === true && queuedRuns.length > 1;
@@ -203,12 +197,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               if (busyRef.current) return;
               busyRef.current = true;
               setResuming(true);
-              await (async () => {
-                await resume({ ...target, input: { threadId: target.threadId } });
-              })().finally(() => {
-                busyRef.current = false;
-                setResuming(false);
-              });
+              await resume({ ...target, input: { threadId: target.threadId } });
+              busyRef.current = false;
+              setResuming(false);
             }}
           />
         </View>

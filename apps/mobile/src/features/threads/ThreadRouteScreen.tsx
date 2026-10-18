@@ -11,7 +11,7 @@ import {
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
 import {
   AuthOrchestrationOperateScope,
@@ -331,23 +331,20 @@ function ThreadRouteContent(
       return;
     }
     mergeBackBusyRef.current = true;
-    return await (async () => {
-      const result = await mergeBack({
-        environmentId: selectedThread.environmentId,
-        input: {
-          sourceThreadId: selectedThread.id,
-          targetThreadId: mergeBackTargetThreadId,
-          runId: mergeBackRun.id,
-          creationSource: "mobile",
-        },
-      });
-      if (result._tag !== "Success") return;
-      navigation.navigate("Thread", {
-        environmentId: selectedThread.environmentId,
-        threadId: mergeBackTargetThreadId,
-      });
-    })().finally(() => {
-      mergeBackBusyRef.current = false;
+    const result = await mergeBack({
+      environmentId: selectedThread.environmentId,
+      input: {
+        sourceThreadId: selectedThread.id,
+        targetThreadId: mergeBackTargetThreadId,
+        runId: mergeBackRun.id,
+        creationSource: "mobile",
+      },
+    });
+    mergeBackBusyRef.current = false;
+    if (result._tag !== "Success") return;
+    navigation.navigate("Thread", {
+      environmentId: selectedThread.environmentId,
+      threadId: mergeBackTargetThreadId,
     });
   };
   const params = props.route.params;
@@ -490,25 +487,12 @@ function ThreadRouteContent(
     });
     showAuxiliaryPane("inspector");
   };
-  const inspectorToggleActionRef = useRef({
-    inspectorMode,
-    openFilesInspector: handleOpenFilesInspector,
-    toggleAuxiliaryPane,
-  });
-  useLayoutEffect(() => {
-    inspectorToggleActionRef.current = {
-      inspectorMode,
-      openFilesInspector: handleOpenFilesInspector,
-      toggleAuxiliaryPane,
-    };
-  });
   const handleToggleInspector = () => {
-    const action = inspectorToggleActionRef.current;
-    if (action.inspectorMode === null) {
-      action.openFilesInspector();
+    if (inspectorMode === null) {
+      handleOpenFilesInspector();
       return;
     }
-    action.toggleAuxiliaryPane();
+    toggleAuxiliaryPane();
   };
   const handleSelectInspectorFile = (path: string) => {
     if (selectedThread === null) {
@@ -804,44 +788,44 @@ function ThreadRouteContent(
     if (!selectedThread || !selectedThreadProject || !setupMessage || localResendBusy.current)
       return;
     localResendBusy.current = true;
-    return await (async () => {
-      const result = await cancelWorktreeSetup({
-        environmentId: selectedThread.environmentId,
-        input: { threadId: selectedThread.id },
-      });
-      if (result._tag !== "Success" || !result.value.cancelled) return;
-      // V2 accepts the launch before setup runs, so cancellation never rejects
-      // the original outbox delivery. Reuse the server-owned prompt and uploads.
-      const metadata = makeTurnCommandMetadata();
-      const launched = await startLocalThread({
-        environmentId: selectedThread.environmentId,
-        input: buildProjectThreadStartTurnInput({
-          ...metadata,
-          projectId: selectedThread.projectId,
-          projectCwd: selectedThreadProject.workspaceRoot,
-          text: setupMessage.text,
-          ...(setupMessage.context ? { context: setupMessage.context } : {}),
-          uploadedAttachments: setupMessage.attachments,
-          modelSelection: selectedThread.modelSelection,
-          runtimeMode: selectedThread.runtimeMode,
-          interactionMode: selectedThread.interactionMode,
-          workspaceMode: "local",
-          branch: null,
-          worktreePath: null,
-          startFromOrigin: false,
-          worktreeBranchName: "",
-        }),
-      });
-      if (launched._tag !== "Success") return;
-      navigation.dispatch(
-        StackActions.replace("Thread", {
-          environmentId: String(selectedThread.environmentId),
-          threadId: metadata.threadId,
-        }),
-      );
-    })().finally(() => {
-      localResendBusy.current = false;
+    const result = await cancelWorktreeSetup({
+      environmentId: selectedThread.environmentId,
+      input: { threadId: selectedThread.id },
     });
+    if (result._tag !== "Success" || !result.value.cancelled) {
+      localResendBusy.current = false;
+      return;
+    }
+    // V2 accepts the launch before setup runs, so cancellation never rejects
+    // the original outbox delivery. Reuse the server-owned prompt and uploads.
+    const metadata = makeTurnCommandMetadata();
+    const launched = await startLocalThread({
+      environmentId: selectedThread.environmentId,
+      input: buildProjectThreadStartTurnInput({
+        ...metadata,
+        projectId: selectedThread.projectId,
+        projectCwd: selectedThreadProject.workspaceRoot,
+        text: setupMessage.text,
+        ...(setupMessage.context ? { context: setupMessage.context } : {}),
+        uploadedAttachments: setupMessage.attachments,
+        modelSelection: selectedThread.modelSelection,
+        runtimeMode: selectedThread.runtimeMode,
+        interactionMode: selectedThread.interactionMode,
+        workspaceMode: "local",
+        branch: null,
+        worktreePath: null,
+        startFromOrigin: false,
+        worktreeBranchName: "",
+      }),
+    });
+    localResendBusy.current = false;
+    if (launched._tag !== "Success") return;
+    navigation.dispatch(
+      StackActions.replace("Thread", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: metadata.threadId,
+      }),
+    );
   };
   const creationState = ((): ThreadDetailScreenProps["creationState"] => {
     if (selectedThreadCreation === null) {

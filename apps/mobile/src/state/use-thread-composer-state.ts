@@ -89,6 +89,7 @@ import {
 } from "@t3tools/client-runtime/state/composer-dispatch";
 import { Atom } from "effect/reactivity";
 import { AsyncResult } from "effect/reactivity";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { prepareTurnAttachments } from "../lib/attachmentUpload";
 import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";
 import { mobilePreferencesAtom } from "./preferences";
@@ -449,46 +450,59 @@ export function useThreadComposerState() {
     }
     savingQueuedEditRef.current = true;
     setIsSavingQueuedEdit(true);
-    return await (async () => {
-      const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
-      const prepared = await prepareTurnAttachments({
+    const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
+    const prepared = await settlePromise(() =>
+      prepareTurnAttachments({
         environmentId: thread.environmentId,
         attachments: draft.attachments,
         supportsImageUploads: capabilities?.attachmentUploads === true,
-      });
-      if (prepared.status !== "ready") return;
-      const payload = resolveQueuedEditPayload({
-        edit,
-        draftContext: draft.context,
-        draftAttachments: draft.attachments,
-        uploaded: prepared.attachments,
-      });
-      const result = await editQueuedRun({
-        environmentId: thread.environmentId,
-        input: {
-          threadId: thread.id,
-          runId: edit.runId,
-          text,
-          edit: {
-            messageId: edit.messageId,
-            attachments: payload.attachments,
-            ...(payload.context ? { context: payload.context } : {}),
-          },
-        },
-      });
-      if (result._tag !== "Success") {
-        Dialog.alert(
-          "Could not save the queued message",
-          "It may have already started. Your edit is still in the composer.",
-        );
-        return;
-      }
-      endQueuedRunEdit(threadKey, { deferAttachmentCleanup: true });
-      scheduleUnusedComposerAttachmentCleanup(draft.attachments);
-    })().finally(() => {
+      }),
+    );
+    if (AsyncResult.isFailure(prepared)) {
       savingQueuedEditRef.current = false;
       setIsSavingQueuedEdit(false);
+      const error = squashAtomCommandFailure(prepared);
+      Dialog.alert(
+        "Could not save the queued message",
+        error instanceof Error ? error.message : "Your edit is still in the composer.",
+      );
+      return;
+    }
+    if (prepared.value.status !== "ready") {
+      savingQueuedEditRef.current = false;
+      setIsSavingQueuedEdit(false);
+      return;
+    }
+    const payload = resolveQueuedEditPayload({
+      edit,
+      draftContext: draft.context,
+      draftAttachments: draft.attachments,
+      uploaded: prepared.value.attachments,
     });
+    const result = await editQueuedRun({
+      environmentId: thread.environmentId,
+      input: {
+        threadId: thread.id,
+        runId: edit.runId,
+        text,
+        edit: {
+          messageId: edit.messageId,
+          attachments: payload.attachments,
+          ...(payload.context ? { context: payload.context } : {}),
+        },
+      },
+    });
+    savingQueuedEditRef.current = false;
+    setIsSavingQueuedEdit(false);
+    if (result._tag !== "Success") {
+      Dialog.alert(
+        "Could not save the queued message",
+        "It may have already started. Your edit is still in the composer.",
+      );
+      return;
+    }
+    endQueuedRunEdit(threadKey, { deferAttachmentCleanup: true });
+    scheduleUnusedComposerAttachmentCleanup(draft.attachments);
   };
 
   const onSendMessage = async (followUpOverride?: ActiveTurnComposerAction) => {
