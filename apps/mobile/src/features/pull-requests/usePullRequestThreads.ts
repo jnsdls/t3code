@@ -83,7 +83,7 @@ export function usePullRequestThreads(
     if (!pr || !canAsk || pending.current) return;
     pending.current = true;
     setBusy(true);
-    try {
+    await (async () => {
       if (connected && !thread && !canCheckout)
         throw new Error("Starting work from this PR requires source control write access.");
       await waitForComposerDraftsLoaded();
@@ -148,12 +148,17 @@ export function usePullRequestThreads(
           screen: "NewTaskDraft",
           params: { draftId: draftKey, title: `Ask about #${pr.number}` },
         });
-    } catch (cause) {
-      Dialog.alert("Couldn't open a thread", cause instanceof Error ? cause.message : "Try again.");
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        Dialog.alert(
+          "Couldn't open a thread",
+          cause instanceof Error ? cause.message : "Try again.",
+        );
+      })
+      .finally(() => {
+        pending.current = false;
+        setBusy(false);
+      });
   };
   return {
     ...relations,

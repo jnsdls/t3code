@@ -65,16 +65,18 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
+    await (async () => {
       await run();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "The provider could not complete this action.",
-      );
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : "The provider could not complete this action.",
+        );
+      })
+      .finally(() => {
+        pending.current = false;
+        setBusy(false);
+      });
   };
   const post = () =>
     operation(async () => {

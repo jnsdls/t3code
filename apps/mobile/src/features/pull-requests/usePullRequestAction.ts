@@ -27,7 +27,7 @@ export function usePullRequestAction(params: PullRequestParams, pr: PullRequestD
     if (pending.current || !available(action)) return;
     pending.current = true;
     setBusy(true);
-    try {
+    await (async () => {
       const response = await run({
         ...target,
         input: { ...target.input, action, ...(updateMethod ? { updateMethod } : {}) },
@@ -35,15 +35,17 @@ export function usePullRequestAction(params: PullRequestParams, pr: PullRequestD
       if (response._tag === "Failure") throw squashAtomCommandFailure(response);
       refreshDetail();
       refreshActivity();
-    } catch (cause) {
-      Dialog.alert(
-        "Couldn't update this pull request",
-        cause instanceof Error ? cause.message : "Try again.",
-      );
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        Dialog.alert(
+          "Couldn't update this pull request",
+          cause instanceof Error ? cause.message : "Try again.",
+        );
+      })
+      .finally(() => {
+        pending.current = false;
+        setBusy(false);
+      });
   };
   const confirm = (action: PullRequestAction, title: string, message: string) =>
     Dialog.alert(title, message, [
