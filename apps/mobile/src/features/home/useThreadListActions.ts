@@ -134,7 +134,7 @@ function useThreadActionExecutor(
 
     inFlightThreadKeys.current.add(key);
     selectionHaptic();
-    return await (async () => {
+    const succeeded = await (async () => {
       if (
         (action === "settle" || action === "unsettle") &&
         !environmentSupportsSettlement(thread.environmentId)
@@ -185,9 +185,9 @@ function useThreadActionExecutor(
       }
       onCompleted?.(action, thread);
       return true;
-    })().finally(() => {
-      inFlightThreadKeys.current.delete(key);
-    });
+    })();
+    inFlightThreadKeys.current.delete(key);
+    return succeeded;
   };
 
   return executeAction;
@@ -258,7 +258,7 @@ export function useThreadListActions(): {
       return false;
     }
     snoozeInFlightThreadKeys.current.add(key);
-    return await (async () => {
+    const succeeded = await (async () => {
       if (!environmentSupportsSnooze(thread.environmentId)) {
         Dialog.alert(
           "Could not snooze thread",
@@ -302,9 +302,9 @@ export function useThreadListActions(): {
         return false;
       }
       return true;
-    })().finally(() => {
-      snoozeInFlightThreadKeys.current.delete(key);
-    });
+    })();
+    snoozeInFlightThreadKeys.current.delete(key);
+    return succeeded;
   };
   const unsnoozeThread = async (thread: EnvironmentThreadShell) => {
     if (!checkThreadOperationPermission(thread, "Could not wake thread")) return false;
@@ -313,7 +313,7 @@ export function useThreadListActions(): {
       return false;
     }
     snoozeInFlightThreadKeys.current.add(key);
-    return await (async () => {
+    const succeeded = await (async () => {
       if (!environmentSupportsSnooze(thread.environmentId)) {
         Dialog.alert(
           "Could not wake thread",
@@ -343,9 +343,9 @@ export function useThreadListActions(): {
         return false;
       }
       return true;
-    })().finally(() => {
-      snoozeInFlightThreadKeys.current.delete(key);
-    });
+    })();
+    snoozeInFlightThreadKeys.current.delete(key);
+    return succeeded;
   };
   const unsettleThread = async (thread: EnvironmentThreadShell) =>
     (await executeAction("unsettle", thread)) === true;
@@ -454,7 +454,7 @@ export function useThreadListActions(): {
 
     titleRegenerationInFlightThreadKeys.current.add(key);
     selectionHaptic();
-    return await (async () => {
+    const succeeded = await (async () => {
       const result = await updateThreadMetadata({
         environmentId: thread.environmentId,
         input: { threadId: thread.id, regenerateTitle: true },
@@ -470,9 +470,9 @@ export function useThreadListActions(): {
         return false;
       }
       return true;
-    })().finally(() => {
-      titleRegenerationInFlightThreadKeys.current.delete(key);
-    });
+    })();
+    titleRegenerationInFlightThreadKeys.current.delete(key);
+    return succeeded;
   };
   const renameThread = (thread: EnvironmentThreadShell) => {
     const commit = (title: string) => {
@@ -531,11 +531,9 @@ export function useThreadListActions(): {
     if (section === "settled") {
       if (!environmentSupportsSettlement(thread.environmentId)) return false;
       appAtomRegistry.set(threadDropBusyAtom, true);
-      return await (async () => {
-        return await settleThread(thread);
-      })().finally(() => {
-        appAtomRegistry.set(threadDropBusyAtom, false);
-      });
+      const settled = await settleThread(thread);
+      appAtomRegistry.set(threadDropBusyAtom, false);
+      return settled;
     }
     const configs = appAtomRegistry.get(environmentServerConfigsAtom);
     const supportsReorder = (environmentId: EnvironmentThreadShell["environmentId"]) => {
@@ -608,9 +606,8 @@ export function useThreadListActions(): {
             assignments,
           }),
         );
-    let succeeded = false;
     const reorder = section === "pinned" ? reorderPinnedMutation : reorderActiveMutation;
-    return await (async () => {
+    const moved = await (async () => {
       if (crossSection) {
         if (section === "pinned") {
           const orderKey = assignments.find(
@@ -657,13 +654,12 @@ export function useThreadListActions(): {
           return false;
         }
       }
-      succeeded = true;
       pending?.complete();
       return true;
-    })().finally(() => {
-      if (!succeeded) pending?.cancel();
-      appAtomRegistry.set(threadDropBusyAtom, false);
-    });
+    })();
+    if (!moved) pending?.cancel();
+    appAtomRegistry.set(threadDropBusyAtom, false);
+    return moved;
   };
 
   const confirmDeleteThread = useConfirmDeleteThread(executeAction);

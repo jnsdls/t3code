@@ -16,7 +16,7 @@ import {
   createContext,
   use,
   useEffect,
-  useLayoutEffect,
+  useEffectEvent,
   useRef,
   useState,
   type ReactNode,
@@ -153,17 +153,18 @@ export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefi
     );
   })();
 
-  const wrappedRenderRef = useRef(wrappedRender);
   const focusedRef = useRef(false);
   const deactivateRef = useRef<(() => void) | null>(null);
 
-  const syncRegistration = () => {
-    if (!focusedRef.current || wrappedRenderRef.current === undefined) {
+  // An effect event reads this render's pane without making the focus
+  // subscription re-run (and deactivate) every time the pane closure changes.
+  const syncRegistration = useEffectEvent(() => {
+    if (!focusedRef.current || wrappedRender === undefined) {
       deactivateRef.current?.();
       return;
     }
-    deactivateRef.current = registerWorkspaceInspector(wrappedRenderRef.current);
-  };
+    deactivateRef.current = registerWorkspaceInspector(wrappedRender);
+  });
 
   useFocusEffect(() => {
     focusedRef.current = true;
@@ -174,14 +175,11 @@ export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefi
     };
   });
 
-  // A layout effect runs before the focus effect, so the ref already holds this
-  // render's pane when focus registers it.
-  useLayoutEffect(() => {
-    wrappedRenderRef.current = wrappedRender;
+  useEffect(() => {
     if (focusedRef.current) {
       syncRegistration();
     }
-  }, [syncRegistration, wrappedRender]);
+  }, [wrappedRender]);
 
   useEffect(
     () => () => {
