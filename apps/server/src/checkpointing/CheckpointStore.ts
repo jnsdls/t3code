@@ -95,9 +95,14 @@ export const make = Effect.gen(function* () {
   });
 
   const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = (cwd) =>
-    vcsRegistry
-      .detect({ cwd, requestedKind: "git" })
-      .pipe(Effect.map((repository) => repository !== null));
+    vcsRegistry.detect({ cwd, requestedKind: "git" }).pipe(
+      // A pier checkout keeps its checkpoints in a git repository of its own.
+      Effect.filterOrElse(
+        (repository) => repository !== null,
+        () => vcsRegistry.detect({ cwd, requestedKind: "pier" }),
+      ),
+      Effect.map((repository) => repository !== null),
+    );
 
   const captureCheckpoint: CheckpointStore["Service"]["captureCheckpoint"] = Effect.fn(
     "captureCheckpoint",

@@ -129,13 +129,17 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus?.isDefaultRef ?? false;
 
+  const pierCheckout = gitStatus?.pierCheckout === true;
+
   const quickAction = (() => {
-    if (!isRepo) {
+    if (!isRepo || pierCheckout) {
       return {
         label: "Git unavailable",
         disabled: true,
         kind: "show_hint" as const,
-        hint: "This workspace is not a git repository.",
+        hint: pierCheckout
+          ? "This workspace is a pier checkout."
+          : "This workspace is not a git repository.",
       };
     }
     const action = resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote);

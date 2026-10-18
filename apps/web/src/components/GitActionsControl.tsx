@@ -1086,6 +1086,8 @@ export default function GitActionsControl({
   const changeRequestTerminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
   const isRepo = gitStatus?.isRepo ?? true;
+  // A pier checkout has no git to commit, push or pull with.
+  const pierCheckout = gitStatus?.pierCheckout === true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
   const changesTotals = gitStatusForActions?.branchChanges ?? gitStatusForActions?.workingTree;
@@ -1108,7 +1110,7 @@ export default function GitActionsControl({
     activeDraftThread.worktreePath === null;
 
   useEffect(() => {
-    if (isGitActionRunning || isSelectingWorktreeBase || activeServerThread) {
+    if (isGitActionRunning || isSelectingWorktreeBase || activeServerThread || pierCheckout) {
       return;
     }
 
@@ -1127,6 +1129,7 @@ export default function GitActionsControl({
     gitStatusForActions,
     isGitActionRunning,
     isSelectingWorktreeBase,
+    pierCheckout,
   ]);
 
   const isDefaultRef = gitStatusForActions?.isDefaultRef ?? false;
@@ -1630,7 +1633,7 @@ export default function GitActionsControl({
     </>
   );
 
-  if (!gitCwd) return null;
+  if (!gitCwd || pierCheckout) return null;
 
   return (
     <>

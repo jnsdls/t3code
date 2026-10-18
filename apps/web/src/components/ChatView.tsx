@@ -3054,7 +3054,7 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-    isGitRepo: isGitRepo || pier.checkout,
+    isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server",
   });
@@ -3062,7 +3062,7 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-    isGitRepo: isGitRepo || pier.checkout,
+    isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
   });
@@ -4653,7 +4653,7 @@ export default function ChatView(props: ChatViewProps) {
       : false;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: pier.requestedEnvMode(envMode),
-    isGitRepo: isGitRepo || pier.checkout,
+    isGitRepo,
   });
   const localCheckoutBranchMismatch = isServerThread
     ? resolveLocalCheckoutBranchMismatch({
@@ -8291,7 +8291,7 @@ export default function ChatView(props: ChatViewProps) {
                               restingControlsHost={restingComposerControlsHost}
                               restingControlsHaveLeadingContext={
                                 mountComposerContextStrip &&
-                                (isGitRepo || pier.checkout || showComposerEnvironmentIndicator)
+                                (isGitRepo || showComposerEnvironmentIndicator)
                               }
                               onRestingControlsVisibilityChange={setRestingComposerControlsVisible}
                               getTimelineScrollableNode={getTimelineScrollableNodeStable}

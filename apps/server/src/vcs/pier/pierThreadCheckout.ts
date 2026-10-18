@@ -1,5 +1,6 @@
 import type { ThreadId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -8,6 +9,7 @@ import * as ServerConfig from "../../config.ts";
 import type * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { resolveWorktreesDirectory } from "../../worktreesDirectory.ts";
+import { removePierCheckpoints } from "./PierCheckpoints.ts";
 import * as PierCli from "./PierCli.ts";
 
 /** Stable per thread, so a retried launch names the same agent and folder. */
@@ -28,6 +30,7 @@ export const makePierThreadCheckouts = Effect.gen(function* () {
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const crypto = yield* Crypto.Crypto;
 
   const create = Effect.fn("PierThreadCheckouts.create")(function* (input: {
     readonly projectRoot: string;
@@ -86,7 +89,14 @@ export const makePierThreadCheckouts = Effect.gen(function* () {
 
   // The folder is named for the thread's agent, so the abandon spares a checkout pointed elsewhere.
   const remove = (directory: string) =>
-    pier.removeCheckout(directory, { agent: path.basename(directory) });
+    pier
+      .removeCheckout(directory, { agent: path.basename(directory) })
+      .pipe(
+        Effect.andThen(removePierCheckpoints(serverConfig.stateDir, directory)),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(Crypto.Crypto, crypto),
+      );
 
   /** `git`'s worktree removal, which removes the thread's pier checkout when it has one. */
   const workspacesFor = <I extends { readonly path: string }, E>(

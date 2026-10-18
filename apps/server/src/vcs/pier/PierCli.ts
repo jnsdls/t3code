@@ -40,9 +40,24 @@ type PierCheckout = typeof PierCheckout.Type;
 /** Only the fields `pier status --json` keeps when its server is unreachable are required. */
 const PierStatus = Schema.Struct({
   ...PierCheckoutFields,
+  main: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        base: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({ state: Schema.String, commits: Schema.optional(Schema.Number) }),
+          ),
+        ),
+      }),
+    ),
+  ),
   main_error: Schema.optional(Schema.NullOr(Schema.String)),
   conflicts: Schema.optional(
-    Schema.Array(Schema.Struct({ path: Schema.String, kind: Schema.String })),
+    Schema.NullOr(Schema.Array(Schema.Struct({ path: Schema.String, kind: Schema.String }))),
+  ),
+  /** Conflicts `pier resolve` settled, which the next commit records. */
+  resolved: Schema.optional(
+    Schema.Array(Schema.Struct({ path: Schema.String, took: Schema.String })),
   ),
   uncommitted: Schema.Array(
     Schema.Struct({
@@ -51,7 +66,7 @@ const PierStatus = Schema.Struct({
     }),
   ),
 });
-type PierStatus = typeof PierStatus.Type;
+export type PierStatus = typeof PierStatus.Type;
 
 const decodeCheckout = Schema.decodeUnknownEffect(Schema.fromJsonString(PierCheckout));
 const decodeStatus = Schema.decodeUnknownEffect(Schema.fromJsonString(PierStatus));
@@ -79,11 +94,17 @@ interface PierCheckoutInput {
 export class PierCli extends Context.Service<
   PierCli,
   {
-    /** Whether `pier` resolves on the server's PATH. */
-    readonly isAvailable: Effect.Effect<boolean>;
     /** Whether `directory` is the root of a pier checkout. */
     readonly isCheckout: (directory: string) => Effect.Effect<boolean>;
+    /** The nearest directory at or above `cwd` that is the root of a pier checkout. */
+    readonly findCheckoutRoot: (cwd: string) => Effect.Effect<string | null>;
     readonly status: (cwd: string) => Effect.Effect<PierStatus, PierCliError>;
+    /** `pier diff` with `args`, as a git-style patch cut off at `maxOutputBytes`. */
+    readonly diff: (
+      cwd: string,
+      args: ReadonlyArray<string>,
+      maxOutputBytes: number,
+    ) => Effect.Effect<{ readonly patch: string; readonly truncated: boolean }, PierCliError>;
     /** Creates `directory`, which must be missing or empty. */
     readonly checkout: (input: PierCheckoutInput) => Effect.Effect<PierCheckout, PierCliError>;
     /** Lays out a checkout of the same upstream, server and cone as the one at `source`. */
@@ -122,7 +143,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((resolved) =>
         resolved === null
           ? Effect.fail(
-              new PierCliError({ operation, cwd, detail: "pier is not on the server's PATH." }),
+              new PierCliError({ operation, cwd, detail: "pier isn't on the server's PATH." }),
             )
           : Effect.succeed(resolved),
       ),
@@ -132,7 +153,11 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
     args: ReadonlyArray<string>,
-    options?: { readonly timeoutMs?: number; readonly json?: boolean },
+    options?: {
+      readonly timeoutMs?: number;
+      readonly json?: boolean;
+      readonly maxOutputBytes?: number;
+    },
   ) {
     const command = yield* executable(operation, cwd);
     const output = yield* processRunner
@@ -141,7 +166,8 @@ export const make = Effect.gen(function* () {
         args: options?.json === false ? args : [...args, "--json"],
         cwd,
         timeout: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxOutputBytes: MAX_OUTPUT_BYTES,
+        maxOutputBytes: options?.maxOutputBytes ?? MAX_OUTPUT_BYTES,
+        outputMode: "truncate",
         timeoutBehavior: "error",
       })
       .pipe(
@@ -161,27 +187,39 @@ export const make = Effect.gen(function* () {
         detail: message?.replace(/^pier:\s*/, "") ?? `exited with ${output.code}`,
       });
     }
-    return output.stdout;
+    return output;
   });
 
   const decodeError = (operation: string, cwd: string) => (cause: unknown) =>
     new PierCliError({ operation, cwd, detail: "pier printed unexpected JSON.", cause });
-
-  const isAvailable: PierCli["Service"]["isAvailable"] = findPier.pipe(
-    Effect.map((resolved) => resolved !== null),
-    Effect.orElseSucceed(() => false),
-  );
 
   const isCheckout: PierCli["Service"]["isCheckout"] = (directory) =>
     fileSystem
       .exists(path.join(directory, ".pier", "checkout.json"))
       .pipe(Effect.orElseSucceed(() => false));
 
+  const findCheckoutRoot: PierCli["Service"]["findCheckoutRoot"] = Effect.fn(
+    "PierCli.findCheckoutRoot",
+  )(function* (cwd) {
+    let current = path.resolve(cwd);
+    while (true) {
+      if (yield* isCheckout(current)) return current;
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  });
+
   const status: PierCli["Service"]["status"] = (cwd) =>
     run("status", cwd, ["status"], { timeoutMs: STATUS_TIMEOUT_MS }).pipe(
-      Effect.flatMap((stdout) =>
-        decodeStatus(stdout).pipe(Effect.mapError(decodeError("status", cwd))),
+      Effect.flatMap((output) =>
+        decodeStatus(output.stdout).pipe(Effect.mapError(decodeError("status", cwd))),
       ),
+    );
+
+  const diff: PierCli["Service"]["diff"] = (cwd, args, maxOutputBytes) =>
+    run("diff", cwd, ["diff", ...args], { json: false, maxOutputBytes }).pipe(
+      Effect.map((output) => ({ patch: output.stdout, truncated: output.stdoutTruncated })),
     );
 
   const checkout: PierCli["Service"]["checkout"] = (input) => {
@@ -207,8 +245,8 @@ export const make = Effect.gen(function* () {
           { timeoutMs: CHECKOUT_TIMEOUT_MS },
         ),
       ),
-      Effect.flatMap((stdout) =>
-        decodeCheckout(stdout).pipe(Effect.mapError(decodeError("checkout", cwd))),
+      Effect.flatMap((output) =>
+        decodeCheckout(output.stdout).pipe(Effect.mapError(decodeError("checkout", cwd))),
       ),
     );
   };
@@ -252,7 +290,15 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return PierCli.of({ isAvailable, isCheckout, status, checkout, checkoutLike, removeCheckout });
+  return PierCli.of({
+    isCheckout,
+    findCheckoutRoot,
+    status,
+    diff,
+    checkout,
+    checkoutLike,
+    removeCheckout,
+  });
 });
 
 export const layer = Layer.effect(PierCli, make);

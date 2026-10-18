@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import type { VcsDriverKind, VcsError, VcsRepositoryIdentity } from "@t3tools/contracts";
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+import * as PierVcsDriver from "./pier/PierVcsDriver.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 
@@ -70,8 +71,10 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const projectConfig = yield* VcsProjectConfig.VcsProjectConfig;
   const git = yield* GitVcsDriver.makeVcsDriver;
+  const pier = yield* PierVcsDriver.make;
   const drivers: Partial<Record<VcsDriverKind, VcsDriver.VcsDriver["Service"]>> = {
     git,
+    pier,
   };
 
   const get: VcsDriverRegistry["Service"]["get"] = (kind) => {
@@ -115,7 +118,11 @@ export const make = Effect.gen(function* () {
       return yield* detectWithDriver(requestedKind, driver, input.cwd);
     }
 
-    return yield* detectWithDriver("git", git, input.cwd);
+    // A pier checkout has no `.git`, but one can sit inside a git repository.
+    return (
+      (yield* detectWithDriver("pier", pier, input.cwd)) ??
+      (yield* detectWithDriver("git", git, input.cwd))
+    );
   });
 
   // Falls back to the cwd alone when the root is not above it, such as a cwd

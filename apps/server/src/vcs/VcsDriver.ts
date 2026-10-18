@@ -10,6 +10,8 @@ import type {
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
   VcsRepositoryIdentity,
+  VcsStatusLocalResult,
+  VcsStatusRemoteResult,
 } from "@t3tools/contracts";
 import { CheckpointRef } from "@t3tools/contracts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -88,5 +90,8 @@ export class VcsDriver extends Context.Service<
     readonly getDiffPreview?: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, VcsError>;
+    /** Status for a workspace the Git workflow does not read itself. */
+    readonly localStatus?: (cwd: string) => Effect.Effect<VcsStatusLocalResult, VcsError>;
+    readonly remoteStatus?: (cwd: string) => Effect.Effect<VcsStatusRemoteResult | null, VcsError>;
   }
 >()("t3/vcs/VcsDriver") {}

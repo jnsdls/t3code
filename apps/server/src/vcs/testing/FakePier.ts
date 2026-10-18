@@ -2,9 +2,10 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-// Answers the commands T3 runs. `checkout` lays out nothing but the marker,
-// and fails half-way once a `fail-checkout` file sits beside the script.
-// `status` prints `status.json` from beside the script when present.
+// Answers the commands T3 runs. `checkout` lays out nothing but the marker, and
+// fails half-way once a `fail-checkout` file sits beside the script. `status`
+// and `diff` print `status.json` and `diff-<from>.patch` from beside the script
+// when present.
 const SCRIPT = `#!/bin/sh
 here="$(dirname "$0")"
 printf '%s|%s\\n' "$PWD" "$*" >> "$here/calls.log"
@@ -28,6 +29,11 @@ case "$1" in
     printf '{"root":"%s","server":"http://pier.test","upstream":"acme/widgets","pinned":"cs-main","agent":null,"cone":["src","docs"],"files":3}\\n' "$2" ;;
   abandon)
     printf '{}\\n' ;;
+  diff)
+    from="$2"
+    [ "$from" = "--merge-base" ] && from="merge-base"
+    [ -e "$here/diff-$from.patch" ] && cat "$here/diff-$from.patch"
+    exit 0 ;;
   *)
     echo "pier: unknown command" >&2
     exit 2 ;;
@@ -51,6 +57,9 @@ export const makeFakePier = Effect.gen(function* () {
     /** What `pier status --json` prints from now on. */
     setStatus: (status: Record<string, unknown>) =>
       fileSystem.writeFileString(path.join(directory, "status.json"), JSON.stringify(status)),
+    /** What `pier diff <from>` prints, `from` being a changeset id or `merge-base`. */
+    setDiff: (from: string, patch: string) =>
+      fileSystem.writeFileString(path.join(directory, `diff-${from}.patch`), patch),
   };
 });
 

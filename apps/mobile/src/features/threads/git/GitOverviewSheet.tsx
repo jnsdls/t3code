@@ -109,10 +109,12 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const gitOperationLabel = gitState.gitOperationLabel;
   const busy = gitOperationLabel !== null;
   const isRepo = gitStatus.data?.isRepo ?? true;
+  // A pier checkout can be reviewed, but has no git to commit, pull or branch with.
+  const canRunGit = isRepo && gitStatus.data?.pierCheckout !== true;
   const hasPrimaryRemote = gitStatus.data?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus.data?.isDefaultRef ?? false;
 
-  const menuItems = isRepo ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote) : [];
+  const menuItems = canRunGit ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote) : [];
 
   const sheetMenuItems = menuItems.map((item) => ({
     item: {
@@ -275,7 +277,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                   ? `${behindCount} commit${behindCount === 1 ? "" : "s"} behind upstream`
                   : "This connection cannot change source control."
               }
-              disabled={!canWriteSourceControl || busy || !isRepo}
+              disabled={!canWriteSourceControl || busy || !canRunGit}
               onPress={() => void gitActions.onPullSelectedThreadBranch()}
             />
           </>
@@ -304,7 +306,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
               ? "Switch branch, create branch, or move to a worktree"
               : "View branches and worktrees"
           }
-          disabled={busy || !isRepo}
+          disabled={busy || !canRunGit}
           onPress={() =>
             navigation.navigate("GitBranches", {
               environmentId: String(environmentId),

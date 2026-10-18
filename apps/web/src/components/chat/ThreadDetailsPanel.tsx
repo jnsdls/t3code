@@ -156,7 +156,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               separated={density === "full"}
             >
               <div className="flex flex-col">
-                {props.isGitRepo ? (
+                {props.isGitRepo && !props.pierCheckout ? (
                   <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
                 ) : null}
                 {props.activeProjectName ? (

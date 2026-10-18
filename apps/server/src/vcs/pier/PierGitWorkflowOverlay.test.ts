@@ -12,6 +12,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as GitVcsDriver from "../GitVcsDriver.ts";
 import { makeFakePier, writePierCheckoutMarker } from "../testing/FakePier.ts";
 import * as VcsDriverRegistry from "../VcsDriverRegistry.ts";
+import * as VcsProcess from "../VcsProcess.ts";
+import { pierCheckpointGitDir } from "./PierCheckpoints.ts";
 import * as PierGitWorkflowOverlay from "./PierGitWorkflowOverlay.ts";
 
 // Removal checks whether a path is a pier checkout under the managed worktrees folder.
@@ -42,7 +44,7 @@ const layerWithPier = (input: {
   );
 
 describe("PierGitWorkflowOverlay", () => {
-  it.effect("deletes a thread's pier checkout instead of asking git to remove it", () =>
+  it.effect("deletes a thread's pier checkout and its checkpoints instead of asking git", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const pier = yield* makeFakePier;
@@ -51,6 +53,8 @@ describe("PierGitWorkflowOverlay", () => {
         const config = yield* ServerConfig.ServerConfig;
         const checkout = `${config.worktreesDir}/widgets/t3-0123abcd`;
         yield* writePierCheckoutMarker(checkout);
+        const checkpoints = yield* pierCheckpointGitDir(config.stateDir, checkout);
+        yield* fileSystem.makeDirectory(checkpoints, { recursive: true });
         yield* pier.setStatus({
           root: checkout,
           server: "http://pier.test",
@@ -64,6 +68,7 @@ describe("PierGitWorkflowOverlay", () => {
         yield* workflow.removeWorktree({ cwd: "/projects/widgets", path: checkout, force: true });
 
         assert.isFalse(yield* fileSystem.exists(checkout));
+        assert.isFalse(yield* fileSystem.exists(checkpoints));
         // `pier abandon` takes no `--json`.
         assert.match((yield* pier.calls).at(-1) ?? "", /\|abandon cs-pinned$/u);
         expect(removeWorktree).not.toHaveBeenCalled();
@@ -114,20 +119,62 @@ describe("PierGitWorkflowOverlay", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("marks a pier checkout's status only while the server can run pier", () =>
+  it.effect("reads a pier checkout's status from pier, and fails plainly without it", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const pier = yield* makeFakePier;
       const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-pier-own-" });
       yield* writePierCheckoutMarker(checkout);
-      const localStatus = (environment: NodeJS.ProcessEnv) =>
+      yield* pier.setStatus({
+        root: checkout,
+        server: "http://pier.test",
+        upstream: "acme/widgets",
+        pinned: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        agent: "t3-0123abcd",
+        cone: ["src"],
+        main: { branch: "main", base: { state: "behind", base: "sha1:aa", commits: 3 } },
+        main_error: null,
+        landing: null,
+        landing_error: null,
+        conflicts: [],
+        conflicts_error: null,
+        resolved: [{ path: "src/c.ts", took: "main" }],
+        uncommitted: [
+          { path: "src/a.ts", status: "modified" },
+          { path: "src/b.ts", status: "added" },
+        ],
+      });
+      const status = (environment: NodeJS.ProcessEnv) =>
         GitWorkflowService.GitWorkflowService.pipe(
-          Effect.flatMap((workflow) => workflow.localStatus({ cwd: checkout })),
-          Effect.provide(layerWithPier({ environment })),
+          Effect.flatMap((workflow) => workflow.status({ cwd: checkout })),
+          Effect.provide(
+            PierGitWorkflowOverlay.layer.pipe(
+              Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+              Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+              Layer.provide(Layer.mock(GitManager.GitManager)({})),
+              Layer.provide(Layer.succeed(HostProcess.Environment, environment)),
+              Layer.provideMerge(layerWorktreeLocation),
+            ),
+          ),
         );
 
-      assert.isTrue((yield* localStatus(pier.environment)).pierCheckout);
-      assert.isUndefined((yield* localStatus({ ...pier.environment, PATH: "" })).pierCheckout);
+      const withPier = yield* status(pier.environment);
+      assert.isTrue(withPier.isRepo);
+      assert.isTrue(withPier.pierCheckout);
+      assert.equal(withPier.refName, "t3-0123abcd");
+      // A resolved conflict is committed with the edits, even with its file untouched.
+      assert.deepEqual(
+        withPier.workingTree.files.map((file) => file.path),
+        ["src/a.ts", "src/b.ts", "src/c.ts"],
+      );
+      assert.isTrue(withPier.hasWorkingTreeChanges);
+      assert.equal(withPier.behindCount, 3);
+      assert.isFalse(withPier.hasUpstream);
+      assert.isFalse(withPier.hasPrimaryRemote);
+
+      // The checkout is still pier's, so git never answers for an enclosing repository.
+      const withoutPier = yield* Effect.flip(status({ ...pier.environment, PATH: "" }));
+      assert.include(withoutPier.message, "pier isn't on the server's PATH");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
