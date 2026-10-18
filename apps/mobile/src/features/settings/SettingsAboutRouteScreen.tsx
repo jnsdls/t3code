@@ -1,6 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import Constants from "expo-constants";
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -56,18 +57,20 @@ function AppSettingsSection() {
     return () => clearTimeout(timer);
   }, [updateState]);
 
-  function checkForUpdate() {
+  async function checkForUpdate() {
     // `disabled={busy}` only takes effect on the next render, so two taps in the
     // same frame would both get through. The ref closes that window.
     if (updateInFlight.current) return;
     updateInFlight.current = true;
-    void runAppUpdateCheck({
-      applyMode: "immediate",
-      onFailure: (message) => Dialog.alert("Update failed", message),
-      onStateChange: setUpdateState,
-    }).finally(() => {
-      updateInFlight.current = false;
-    });
+    // Failures arrive through onFailure; the settled result only matters for unlocking.
+    await settlePromise(() =>
+      runAppUpdateCheck({
+        applyMode: "immediate",
+        onFailure: (message) => Dialog.alert("Update failed", message),
+        onStateChange: setUpdateState,
+      }),
+    );
+    updateInFlight.current = false;
   }
 
   function handleVersionPress() {
@@ -75,7 +78,7 @@ function AppSettingsSection() {
     const tap = registerHiddenUpdateTap(hiddenUpdateTapCount.current);
     hiddenUpdateTapCount.current = tap.nextCount;
     if (tap.shouldCheck) {
-      checkForUpdate();
+      void checkForUpdate();
     }
   }
 

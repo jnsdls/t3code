@@ -127,13 +127,9 @@ function ProviderAccount({
     pendingRef.current = true;
     setPending(true);
     setError(null);
-    const result = await command().catch(() => null);
+    const result = await command();
     pendingRef.current = false;
     setPending(false);
-    if (result === null) {
-      setError("Could not update provider sign-in.");
-      return false;
-    }
     if (result._tag === "Success") return true;
     if (!isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);

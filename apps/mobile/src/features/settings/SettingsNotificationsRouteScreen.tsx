@@ -370,14 +370,14 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     setLiveActivityStatus("disabled");
   }
 
-  const handleLiveActivitiesChange = (enabled: boolean) => {
+  // Both writers settle their own failures, so awaiting them never throws.
+  const handleLiveActivitiesChange = async (enabled: boolean) => {
     if (liveActivityWriteInFlight.current) return;
     if (!enabled) {
       liveActivityWriteInFlight.current = true;
       setLiveActivityStatus("linking");
-      void disableLiveActivities().finally(() => {
-        liveActivityWriteInFlight.current = false;
-      });
+      await disableLiveActivities();
+      liveActivityWriteInFlight.current = false;
       return;
     }
 
@@ -387,9 +387,8 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     }
 
     liveActivityWriteInFlight.current = true;
-    void linkEnvironments().finally(() => {
-      liveActivityWriteInFlight.current = false;
-    });
+    await linkEnvironments();
+    liveActivityWriteInFlight.current = false;
   };
 
   return (
@@ -441,13 +440,13 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
               deviceRegistered
             }
-            onValueChange={handleLiveActivitiesChange}
+            onValueChange={(enabled) => void handleLiveActivitiesChange(enabled)}
           />
           {liveActivityStatus === "signed-out" && canClearLiveActivitiesPreference ? (
             <SettingsRow
               icon="bolt.circle"
               label="Turn off Live Activity preference"
-              onPress={() => handleLiveActivitiesChange(false)}
+              onPress={() => void handleLiveActivitiesChange(false)}
             />
           ) : null}
           {supportsAndroidLiveUpdateSettings() ? (
