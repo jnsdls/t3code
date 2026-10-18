@@ -154,25 +154,22 @@ export function ConnectionsNewRouteScreen({
   const connectAndClose = async (pairingUrl: string) => {
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    await (async () => {
-      const result = await onConnectPress(pairingUrl, params.routeFor);
-      void Haptics.notificationAsync(
-        AsyncResult.isSuccess(result)
-          ? Haptics.NotificationFeedbackType.Success
-          : Haptics.NotificationFeedbackType.Error,
-      );
-      if (AsyncResult.isSuccess(result)) {
-        // Return to whatever opened the sheet. Replacing it with Home would
-        // nest Home inside any sheet still below it.
-        if (!navigation.canGoBack()) {
-          navigation.dispatch(StackActions.replace("Home"));
-        } else {
-          navigation.goBack();
-        }
+    const result = await onConnectPress(pairingUrl, params.routeFor);
+    setIsSubmitting(false);
+    void Haptics.notificationAsync(
+      AsyncResult.isSuccess(result)
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error,
+    );
+    if (AsyncResult.isSuccess(result)) {
+      // Return to whatever opened the sheet. Replacing it with Home would
+      // nest Home inside any sheet still below it.
+      if (!navigation.canGoBack()) {
+        navigation.dispatch(StackActions.replace("Home"));
+      } else {
+        navigation.goBack();
       }
-    })().finally(() => {
-      setIsSubmitting(false);
-    });
+    }
   };
 
   const handleSubmit = async () => {

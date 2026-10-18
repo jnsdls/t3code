@@ -1,3 +1,5 @@
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "./ui/Dialog";
 import type { ComposerContextRecord, EnvironmentId } from "@t3tools/contracts";
 import { Pressable, View } from "react-native";
@@ -61,32 +63,34 @@ export function ComposerContextAttachment(props: {
     if (sharing) return;
     setSharing(true);
     const controller = new AbortController();
-    await (async () => {
+    const result = await settlePromise(async () => {
       if (local) {
         const preview = await loadLocalAttachmentPreview(local, controller.signal);
-        await preview?.share(controller.signal, shareSourceIdentifier).finally(() => {
-          preview.dispose();
-        });
-      } else {
-        const url = await refresh();
-        if (!url) throw new Error("Reconnect to the environment and try again.");
-        await downloadAndShareAttachment({
-          url,
-          attachment: record,
-          signal: controller.signal,
-          sourceIdentifier: shareSourceIdentifier,
-        });
-      }
-    })()
-      .catch((cause: unknown) => {
-        Dialog.alert(
-          "Could not open attachment",
-          cause instanceof Error ? cause.message : "Try again.",
+        if (!preview) return;
+        const shared = await settlePromise(() =>
+          preview.share(controller.signal, shareSourceIdentifier),
         );
-      })
-      .finally(() => {
-        setSharing(false);
+        preview.dispose();
+        if (AsyncResult.isFailure(shared)) throw squashAtomCommandFailure(shared);
+        return;
+      }
+      const url = await refresh();
+      if (!url) throw new Error("Reconnect to the environment and try again.");
+      await downloadAndShareAttachment({
+        url,
+        attachment: record,
+        signal: controller.signal,
+        sourceIdentifier: shareSourceIdentifier,
       });
+    });
+    setSharing(false);
+    if (AsyncResult.isFailure(result)) {
+      const cause = squashAtomCommandFailure(result);
+      Dialog.alert(
+        "Could not open attachment",
+        cause instanceof Error ? cause.message : "Try again.",
+      );
+    }
   };
   return (
     <View className="gap-3">

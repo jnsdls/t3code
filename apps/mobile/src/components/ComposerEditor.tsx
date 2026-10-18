@@ -2,6 +2,7 @@ import * as Dialog from "./ui/Dialog";
 import { ComposerContextId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -87,7 +88,7 @@ export function ComposerEditor({
     importRef.current = controller;
     setImporting(true);
     setComposerContextImporting(draftKey, true);
-    return await (async () => {
+    const settled = await settlePromise(async () => {
       const retained = getComposerDraftAfterSelection(draftKey, insertion);
       const result = await importComposerContextClipboard(
         clipboard,
@@ -111,19 +112,17 @@ export function ComposerEditor({
           "Some attachments could not be copied",
           "Reconnect to the source environment and copy them again. References without their files are marked unavailable.",
         );
-    })()
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted)
-          Dialog.alert(
-            "Could not paste context",
-            error instanceof Error ? error.message : "Try copying again.",
-          );
-      })
-      .finally(() => {
-        setComposerContextImporting(draftKey, false);
-        importRef.current = null;
-        setImporting(false);
-      });
+    });
+    setComposerContextImporting(draftKey, false);
+    importRef.current = null;
+    setImporting(false);
+    if (AsyncResult.isFailure(settled) && !controller.signal.aborted) {
+      const error = squashAtomCommandFailure(settled);
+      Dialog.alert(
+        "Could not paste context",
+        error instanceof Error ? error.message : "Try copying again.",
+      );
+    }
   };
   const clipboardFragment =
     environmentId && draft.context

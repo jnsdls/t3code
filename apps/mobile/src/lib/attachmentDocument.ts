@@ -1,3 +1,5 @@
+import { AsyncResult } from "effect/reactivity";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Dialog from "../components/ui/Dialog";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -164,21 +166,20 @@ export function useAttachmentDocument(input: {
       attachment: { name: input.name, mimeType: input.mimeType },
       signal: controller.signal,
     };
-    await (async () => {
+    const result = await settlePromise(async () => {
       if (isLocalUri(uri)) await shareLocalAttachment({ ...request, uri });
       else await downloadAndShareAttachment({ ...request, url: (await refresh()) ?? uri });
-    })()
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        Dialog.alert(
-          "Could not share file",
-          cause instanceof Error ? cause.message : "Please try again.",
-        );
-      })
-      .finally(() => {
-        if (shareController.current === controller) shareController.current = null;
-        if (!controller.signal.aborted) setSharing(false);
-      });
+    });
+    if (shareController.current === controller) shareController.current = null;
+    if (controller.signal.aborted) return;
+    setSharing(false);
+    if (AsyncResult.isFailure(result)) {
+      const cause = squashAtomCommandFailure(result);
+      Dialog.alert(
+        "Could not share file",
+        cause instanceof Error ? cause.message : "Please try again.",
+      );
+    }
   };
   return {
     kind,
