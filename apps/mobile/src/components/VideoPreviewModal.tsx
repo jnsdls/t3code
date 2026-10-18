@@ -1,6 +1,6 @@
 import { useIsFocused } from "@react-navigation/native";
 import { videoMimeType } from "@t3tools/shared/video";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -61,7 +61,9 @@ function useLocalPlayback(source: LocalVideoPreviewSource): PlaybackState {
   // Only a different file needs a new lease; a metadata update on the same
   // draft must not dispose the file Android is still playing.
   const attachmentRef = useRef(attachment);
-  attachmentRef.current = attachment;
+  useLayoutEffect(() => {
+    attachmentRef.current = attachment;
+  });
   const { id: attachmentId, fileUri } = attachment;
   useEffect(() => {
     setUri(null);

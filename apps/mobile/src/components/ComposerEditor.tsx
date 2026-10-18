@@ -3,7 +3,7 @@ import { ComposerContextId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -54,7 +54,7 @@ export function ComposerEditor({
   const preferredEnterBehavior = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.composerEnterBehavior
     : undefined;
-  const contextHistory = useMemo(() => createComposerDraftContextHistory(), [draftKey]);
+  const contextHistory = createComposerDraftContextHistory();
   useEffect(() => () => contextHistory.dispose(), [contextHistory]);
   const changeText = (text: string) => {
     const restored = contextHistory.restore(
@@ -87,7 +87,7 @@ export function ComposerEditor({
     importRef.current = controller;
     setImporting(true);
     setComposerContextImporting(draftKey, true);
-    try {
+    return await (async () => {
       const retained = getComposerDraftAfterSelection(draftKey, insertion);
       const result = await importComposerContextClipboard(
         clipboard,
@@ -111,41 +111,38 @@ export function ComposerEditor({
           "Some attachments could not be copied",
           "Reconnect to the source environment and copy them again. References without their files are marked unavailable.",
         );
-    } catch (error) {
-      if (!controller.signal.aborted)
-        Dialog.alert(
-          "Could not paste context",
-          error instanceof Error ? error.message : "Try copying again.",
-        );
-    } finally {
-      setComposerContextImporting(draftKey, false);
-      importRef.current = null;
-      setImporting(false);
-    }
+    })()
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          Dialog.alert(
+            "Could not paste context",
+            error instanceof Error ? error.message : "Try copying again.",
+          );
+      })
+      .finally(() => {
+        setComposerContextImporting(draftKey, false);
+        importRef.current = null;
+        setImporting(false);
+      });
   };
-  const clipboardFragment = useMemo(
-    () =>
-      environmentId && draft.context
-        ? encodeComposerContextFragment({
-            version: 1,
-            source: { environmentId },
-            records: draft.context.records.map((record) => {
-              if (!("attachmentId" in record)) return record;
-              const attachment = draft.attachments.find(
-                (entry) => entry.id === record.attachmentId,
-              );
-              return {
-                ...record,
-                attachmentId:
-                  attachment?.uploadEnvironmentId === environmentId
-                    ? (attachment.uploadedAttachmentId ?? record.attachmentId)
-                    : record.attachmentId,
-              };
-            }),
-          })
-        : "",
-    [environmentId, draft.context, draft.attachments],
-  );
+  const clipboardFragment =
+    environmentId && draft.context
+      ? encodeComposerContextFragment({
+          version: 1,
+          source: { environmentId },
+          records: draft.context.records.map((record) => {
+            if (!("attachmentId" in record)) return record;
+            const attachment = draft.attachments.find((entry) => entry.id === record.attachmentId);
+            return {
+              ...record,
+              attachmentId:
+                attachment?.uploadEnvironmentId === environmentId
+                  ? (attachment.uploadedAttachmentId ?? record.attachmentId)
+                  : record.attachmentId,
+            };
+          }),
+        })
+      : "";
   const navigation = useNavigation();
   const selectedReference = selected
     ? collectComposerContextReferences(selected.source)[0]
