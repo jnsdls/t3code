@@ -57,6 +57,12 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
+// `pier` builds a fork that installs beside the official app; the desktop bundle
+// reads the same variable (apps/desktop/src/app/DesktopVariant.ts).
+const DesktopVariantConfig = Config.schema(
+  Schema.Literals(["", "pier"]),
+  "T3CODE_DESKTOP_VARIANT",
+).pipe(Config.withDefault(""));
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2669,7 +2675,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
+export function resolveDesktopProductName(version: string, pier = false): string {
+  if (pier) return "T3 Code (Pier)";
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
@@ -2691,10 +2698,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
+  const pier = (yield* DesktopVariantConfig) === "pier";
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    appId: pier ? `${DESKTOP_APP_ID}.pier` : DESKTOP_APP_ID,
+    productName: resolveDesktopProductName(version, pier),
+    artifactName: pier
+      ? "T3-Code-Pier-${version}-${arch}.${ext}"
+      : "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2726,7 +2736,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // GH_TOKEN/GITHUB_TOKEN. The staged app has no repository to resolve it
   // against, so writing update manifests then crashes on a null config.
   buildConfig.publish = null;
-  if (!isDesktopPreviewVersion(version)) {
+  // The pier variant never updates into the official build.
+  if (!pier && !isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2766,10 +2777,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ],
       },
       protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
+        // Claiming these would route the official app's sign-in callbacks to the fork.
+        ...(pier ? [] : [{ name: "T3 Code", schemes: ["t3code", "t3code-dev"] }]),
         {
           name: "Web site URL",
           schemes: ["http", "https"],
@@ -2791,7 +2800,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // Give the themed installer its own Finder volume name. Finder caches
       // DMG window backgrounds by volume name, so reusing a generic name can
       // make a newly built background look unchanged during testing.
-      title: `${resolveDesktopProductName(version)} ${version} Installer`,
+      title: `${resolveDesktopProductName(version, pier)} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
         width: 640,

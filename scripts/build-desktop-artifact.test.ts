@@ -398,6 +398,37 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
+  it.effect("builds the pier variant as a separate app that never updates", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const mac = config.mac as { protocols: Array<{ schemes: string[] }> };
+
+      assert.equal(config.appId, "com.t3tools.t3code.pier");
+      assert.equal(config.productName, "T3 Code (Pier)");
+      assert.isNull(config.publish);
+      assert.notInclude(
+        mac.protocols.flatMap((protocol) => protocol.schemes),
+        "t3code",
+      );
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { GITHUB_REPOSITORY: "pingdotgg/t3code", T3CODE_DESKTOP_VARIANT: "pier" },
+          }),
+        ),
+      ),
+    ),
+  );
+
   it("stages only the desktop main-process externals", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
